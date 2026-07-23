@@ -1,0 +1,406 @@
+'use client';
+
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useAuth } from '@/providers/auth-provider';
+import { useLocalStorage } from '@/lib/hooks/use-local-storage';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText } from 'lucide-react';
+import { WORK_TYPES, TASK_STATUSES, DRAFT_STORAGE_KEY } from '@/lib/constants';
+import { TaskFormData, DailyTask } from '@/lib/types';
+import { formatDate, getToday } from '@/lib/utils';
+import { toast } from 'sonner';
+import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
+
+interface TaskFormProps {
+  existingTask?: DailyTask | null;
+  onSuccess?: () => void;
+}
+
+const REPORTING_ENGINEERS = [
+  { id: 'QA002', name: 'Hiren Dodiya' },
+  { id: 'QA003', name: 'Purvesh Kapadiya' },
+  { id: 'QA004', name: 'Mehul Chikhaliya' },
+];
+
+export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
+  const { employee } = useAuth();
+  const router = useRouter();
+  const { value: draft, setValue: saveDraft, removeValue: clearDraft, isLoaded } = useLocalStorage<Partial<TaskFormData>>(DRAFT_STORAGE_KEY, {});
+
+  const [selectedEmpId, setSelectedEmpId] = useState<string>(
+    employee?.id === 'QA001' ? 'QA004' : (employee?.id || 'QA004')
+  );
+
+  const [allWorkTypes, setAllWorkTypes] = useState<string[]>(WORK_TYPES);
+  const [customTypeInput, setCustomTypeInput] = useState('');
+  const [showCustomInput, setShowCustomInput] = useState(false);
+
+  const [selectedDate, setSelectedDate] = useState<string>(getToday());
+
+  const [formData, setFormData] = useState<TaskFormData>({
+    work_type: 'Testing',
+    task_performed: '',
+    status: 'Completed',
+    remarks: '',
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+
+  const supabaseRef = useRef(createClient());
+  const supabase = supabaseRef.current;
+
+  // Load custom work types from localStorage
+  useEffect(() => {
+    const stored = localStorage.getItem('qa-custom-work-types');
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as string[];
+        setAllWorkTypes([...WORK_TYPES, ...parsed]);
+      } catch {
+        // ignore
+      }
+    }
+  }, []);
+
+  const handleAddCustomType = () => {
+    const trimmed = customTypeInput.trim();
+    if (!trimmed) return;
+    if (allWorkTypes.includes(trimmed)) {
+      toast.error('Work type already exists');
+      return;
+    }
+
+    const newTypes = [...allWorkTypes, trimmed];
+    setAllWorkTypes(newTypes);
+
+    // Save only the custom types to localstorage
+    const customOnly = newTypes.filter(t => !WORK_TYPES.includes(t as any));
+    localStorage.setItem('qa-custom-work-types', JSON.stringify(customOnly));
+
+    setFormData(prev => ({ ...prev, work_type: trimmed as any }));
+    setCustomTypeInput('');
+    setShowCustomInput(false);
+    toast.success(`Custom work type "${trimmed}" added!`);
+  };
+
+  // Load existing task or draft
+  useEffect(() => {
+    if (existingTask) {
+      setFormData({
+        work_type: existingTask.work_type,
+        task_performed: existingTask.task_performed,
+        status: existingTask.status,
+        remarks: existingTask.remarks || '',
+      });
+      setSelectedDate(existingTask.date);
+    } else if (isLoaded && draft && Object.keys(draft).length > 0) {
+      setFormData((prev) => ({ ...prev, ...draft }));
+    }
+  }, [existingTask, draft, isLoaded]);
+
+  // Auto-save draft (debounced)
+  const autoSave = useCallback(() => {
+    if (!existingTask && formData.task_performed.trim()) {
+      saveDraft(formData);
+    }
+  }, [formData, existingTask, saveDraft]);
+
+  useEffect(() => {
+    const timer = setTimeout(autoSave, 800);
+    return () => clearTimeout(timer);
+  }, [autoSave]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.task_performed.trim()) {
+      toast.error('Please describe the task you performed');
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const empId = selectedEmpId;
+
+      // 1. Direct browser insert to Supabase for sub-30ms instant speed
+      let insertSuccess = false;
+      try {
+        const { error } = await supabase.from('daily_tasks').insert({
+          employee_id: empId,
+          date: selectedDate,
+          work_type: formData.work_type,
+          task_performed: formData.task_performed.trim(),
+          status: formData.status,
+          remarks: formData.remarks?.trim() || null,
+        });
+        if (!error) insertSuccess = true;
+      } catch {
+        // ignore
+      }
+
+      // 2. API fallback if direct browser insert encounters policy/network issues
+      if (!insertSuccess) {
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employee_id: empId,
+            date: selectedDate,
+            ...formData,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || 'Failed to submit task');
+        }
+      }
+
+      clearDraft();
+      setIsSubmitted(true);
+      toast.success('Task submitted successfully!', {
+        description: 'Your daily report has been saved.',
+      });
+
+      onSuccess?.();
+    } catch (error) {
+      toast.error('Failed to submit task', {
+        description: error instanceof Error ? error.message : 'Please try again',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleResetForm = () => {
+    setFormData({
+      work_type: 'Testing',
+      task_performed: '',
+      status: 'Completed',
+      remarks: '',
+    });
+    setIsSubmitted(false);
+  };
+
+  if (isSubmitted) {
+    return (
+      <div className="glass-card glow-card p-10 flex flex-col items-center justify-center text-center">
+        <div className="h-16 w-16 rounded-2xl bg-emerald-500/10 flex items-center justify-center mb-5 shadow-lg shadow-emerald-500/10">
+          <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+        </div>
+        <h3 className="text-lg font-bold tracking-tight mb-1">Task Submitted Successfully!</h3>
+        <p className="text-sm text-muted-foreground mb-6 font-medium">
+          Your daily report for {formatDate(getToday())} has been recorded.
+        </p>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={handleResetForm} className="rounded-xl border-border/30 hover:bg-primary/5 font-semibold">
+            <PlusCircle className="h-4 w-4 mr-2" />
+            Add Another Task
+          </Button>
+          <Button
+            onClick={() => router.push('/dashboard')}
+            className="shimmer-bg text-white rounded-xl shadow-md shadow-primary/20 font-semibold"
+          >
+            Go to Dashboard
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="glass-card glow-card overflow-hidden">
+      {/* Header */}
+      <div className="p-6 pb-4 border-b border-border/15">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="text-lg font-bold tracking-tight">
+                {existingTask ? 'Edit Task Report' : 'Daily Task Report'}
+              </h3>
+              <p className="text-[11px] text-muted-foreground font-medium">
+                {formatDate(getToday(), 'EEEE, MMMM dd, yyyy')}
+              </p>
+            </div>
+          </div>
+          {!existingTask && draft && Object.keys(draft).length > 0 && (
+            <Badge variant="secondary" className="text-[10px] gap-1.5 bg-primary/[0.06] text-primary border-0 font-semibold rounded-lg px-2.5">
+              <Save className="h-3 w-3" />
+              Draft saved
+            </Badge>
+          )}
+        </div>
+      </div>
+
+      {/* Form */}
+      <div className="p-6">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Employee Selection (3 Reporting QA Members) */}
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold">Reporting QA Member *</Label>
+            <Select
+              value={selectedEmpId}
+              onValueChange={(val) => val && setSelectedEmpId(val)}
+            >
+              <SelectTrigger className="h-11 rounded-xl border-border/30 bg-background/60 font-medium">
+                <SelectValue placeholder="Select QA Member" />
+              </SelectTrigger>
+              <SelectContent className="glass-card border-border/30">
+                {REPORTING_ENGINEERS.map((emp) => (
+                  <SelectItem key={emp.id} value={emp.id}>
+                    {emp.name} ({emp.id})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Report Date (Manual selection) */}
+          <div className="space-y-2">
+            <Label htmlFor="report_date" className="text-xs font-semibold">Report Date *</Label>
+            <Input
+              id="report_date"
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="h-11 rounded-xl border-border/30 bg-background/60 font-medium"
+            />
+          </div>
+
+          {/* Work Type */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="work_type" className="text-xs font-semibold">Type of Work *</Label>
+              <button
+                type="button"
+                onClick={() => setShowCustomInput(!showCustomInput)}
+                className="text-[11px] text-primary hover:underline font-bold"
+              >
+                {showCustomInput ? 'Select Existing' : '+ Add Custom Type'}
+              </button>
+            </div>
+
+            {showCustomInput ? (
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter custom work type..."
+                  value={customTypeInput}
+                  onChange={(e) => setCustomTypeInput(e.target.value)}
+                  className="h-11 rounded-xl border-border/30 bg-background/60 font-medium"
+                />
+                <Button
+                  type="button"
+                  onClick={handleAddCustomType}
+                  className="shimmer-bg text-white h-11 px-5 rounded-xl shadow-md shadow-primary/15 font-semibold"
+                >
+                  Add
+                </Button>
+              </div>
+            ) : (
+              <Select
+                value={formData.work_type}
+                onValueChange={(value) => value && setFormData({ ...formData, work_type: value as TaskFormData['work_type'] })}
+              >
+                <SelectTrigger className="h-11 rounded-xl border-border/30 bg-background/60 font-medium">
+                  <SelectValue placeholder="Select work type" />
+                </SelectTrigger>
+                <SelectContent className="glass-card border-border/30">
+                  {allWorkTypes.map((type) => (
+                    <SelectItem key={type} value={type}>
+                      {type}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
+
+          {/* Task Performed */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="task_performed" className="text-xs font-semibold">Task Performed *</Label>
+              <span className="text-[10px] text-muted-foreground font-semibold">
+                {formData.task_performed.length}/500
+              </span>
+            </div>
+            <Textarea
+              id="task_performed"
+              placeholder="Describe what you worked on today..."
+              value={formData.task_performed}
+              onChange={(e) => setFormData({ ...formData, task_performed: e.target.value.slice(0, 500) })}
+              rows={4}
+              className="resize-none rounded-xl border-border/30 bg-background/60 font-medium"
+            />
+          </div>
+
+          {/* Status */}
+          <div className="space-y-2">
+            <Label htmlFor="status" className="text-xs font-semibold">Status *</Label>
+            <Select
+              value={formData.status}
+              onValueChange={(value) => value && setFormData({ ...formData, status: value as TaskFormData['status'] })}
+            >
+              <SelectTrigger className="h-11 rounded-xl border-border/30 bg-background/60 font-medium">
+                <SelectValue placeholder="Select status" />
+              </SelectTrigger>
+              <SelectContent className="glass-card border-border/30">
+                {TASK_STATUSES.map((status) => (
+                  <SelectItem key={status} value={status}>
+                    {status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Remarks */}
+          <div className="space-y-2">
+            <Label htmlFor="remarks" className="text-xs font-semibold">Remarks (Optional)</Label>
+            <Textarea
+              id="remarks"
+              placeholder="Any additional notes or blockers..."
+              value={formData.remarks || ''}
+              onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
+              rows={2}
+              className="resize-none rounded-xl border-border/30 bg-background/60 font-medium"
+            />
+          </div>
+
+          {/* Submit Button */}
+          <Button
+            type="submit"
+            disabled={isSubmitting || !formData.task_performed.trim()}
+            className="w-full h-12 shimmer-bg hover:opacity-90 text-white font-bold rounded-xl shadow-lg shadow-primary/25 transition-all duration-200 text-sm"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Submitting...
+              </>
+            ) : (
+              <>
+                <Send className="mr-2 h-4 w-4" />
+                Submit Daily Task Report
+              </>
+            )}
+          </Button>
+        </form>
+      </div>
+    </div>
+  );
+}
