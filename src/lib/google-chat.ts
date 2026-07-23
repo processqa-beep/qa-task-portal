@@ -1,101 +1,56 @@
 /**
- * Utility to send formatted daily task reports to a Google Chat Space via Incoming Webhook.
+ * Client-side helper that calls our server API endpoint (/api/google-chat)
+ * to send daily task reports to Google Chat without CORS issues.
  */
 
-interface TaskNotificationParams {
-  employeeName: string;
-  employeeId: string;
-  date: string;
-  workType: string;
-  taskPerformed: string;
+export interface TaskItemPayload {
+  work_type: string;
+  task_performed: string;
   status: string;
   remarks?: string | null;
 }
 
-export async function sendGoogleChatNotification(params: TaskNotificationParams) {
-  // Get webhook URL from environment variable or localStorage setting
-  const webhookUrl =
-    process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL ||
-    (typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : null);
+export interface SendGoogleChatParams {
+  webhookUrl?: string;
+  employeeName: string;
+  employeeId: string;
+  date: string;
+  tasks: TaskItemPayload[];
+}
 
-  if (!webhookUrl) {
-    console.log('Google Chat Webhook URL not configured. Skipping notification.');
-    return { success: false, reason: 'No Webhook URL configured' };
-  }
-
-  const { employeeName, employeeId, date, workType, taskPerformed, status, remarks } = params;
-
-  // Format a rich Google Chat Card / Message
-  const statusEmoji = status === 'Completed' ? '✅' : '⏳';
-  const cardPayload = {
-    cardsV2: [
-      {
-        cardId: `task-report-${Date.now()}`,
-        card: {
-          header: {
-            title: `📋 QA Daily Task Report`,
-            subtitle: `${employeeName} (${employeeId}) · ${date}`,
-            imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906343.png',
-            imageType: 'CIRCLE',
-          },
-          sections: [
-            {
-              widgets: [
-                {
-                  keyValue: {
-                    topLabel: 'QA Engineer',
-                    content: `<b>${employeeName}</b> (${employeeId})`,
-                    icon: 'PERSON',
-                  },
-                },
-                {
-                  keyValue: {
-                    topLabel: 'Work Type & Status',
-                    content: `<b>${workType}</b> &nbsp;|&nbsp; ${statusEmoji} <b>${status}</b>`,
-                    icon: 'BOOKMARK',
-                  },
-                },
-                {
-                  textParagraph: {
-                    text: `<b>Task Performed:</b><br>${taskPerformed.replace(/\n/g, '<br>')}`,
-                  },
-                },
-                ...(remarks
-                  ? [
-                      {
-                        textParagraph: {
-                          text: `<i>Note / Remarks: ${remarks}</i>`,
-                        },
-                      },
-                    ]
-                  : []),
-              ],
-            },
-          ],
-        },
-      },
-    ],
-  };
+export async function sendGoogleChatNotification(params: SendGoogleChatParams) {
+  // Retrieve webhook URL from localStorage if not passed explicitly
+  const savedWebhook =
+    params.webhookUrl ||
+    (typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : null) ||
+    '';
 
   try {
-    const response = await fetch(webhookUrl, {
+    const response = await fetch('/api/google-chat', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json; charset=UTF-8',
+        'Content-Type': 'application/json',
       },
-      body: JSON.stringify(cardPayload),
+      body: JSON.stringify({
+        webhookUrl: savedWebhook,
+        employeeName: params.employeeName,
+        employeeId: params.employeeId,
+        date: params.date,
+        tasks: params.tasks,
+      }),
     });
 
-    if (response.ok) {
-      console.log('Google Chat notification sent successfully!');
-      return { success: true };
+    const data = await response.json();
+
+    if (response.ok && data.success) {
+      return { success: true, count: data.count };
     } else {
-      const errText = await response.text();
-      console.error('Google Chat Webhook Error:', errText);
-      return { success: false, error: errText };
+      return { success: false, error: data.error || 'Failed to send notification' };
     }
   } catch (err) {
-    console.error('Failed to trigger Google Chat notification:', err);
-    return { success: false, error: err instanceof Error ? err.message : 'Fetch failed' };
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network connection error',
+    };
   }
 }
