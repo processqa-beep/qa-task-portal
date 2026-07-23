@@ -71,7 +71,7 @@ export const NAV_ITEMS = [
     roles: ['employee', 'leader'] as string[],
   },
   {
-    title: 'CEO Impact Review',
+    title: 'Impact Review',
     href: '/ceo-review',
     icon: 'TrendingUp',
     roles: ['employee', 'leader'] as string[],
