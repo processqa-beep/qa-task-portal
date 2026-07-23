@@ -15,13 +15,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText } from 'lucide-react';
+import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, Settings2 } from 'lucide-react';
 import { WORK_TYPES, TASK_STATUSES, DRAFT_STORAGE_KEY } from '@/lib/constants';
 import { TaskFormData, DailyTask } from '@/lib/types';
 import { formatDate, getToday } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
+import { sendGoogleChatNotification } from '@/lib/google-chat';
 
 interface TaskFormProps {
   existingTask?: DailyTask | null;
@@ -49,6 +50,10 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
 
   const [selectedDate, setSelectedDate] = useState<string>(getToday());
 
+  // Webhook settings state
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [showWebhookConfig, setShowWebhookConfig] = useState(false);
+
   const [formData, setFormData] = useState<TaskFormData>({
     work_type: 'Testing',
     task_performed: '',
@@ -61,18 +66,35 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
   const supabaseRef = useRef(createClient());
   const supabase = supabaseRef.current;
 
-  // Load custom work types from localStorage
+  // Load custom work types & webhook URL from localStorage
   useEffect(() => {
-    const stored = localStorage.getItem('qa-custom-work-types');
-    if (stored) {
+    const storedTypes = localStorage.getItem('qa-custom-work-types');
+    if (storedTypes) {
       try {
-        const parsed = JSON.parse(stored) as string[];
+        const parsed = JSON.parse(storedTypes) as string[];
         setAllWorkTypes([...WORK_TYPES, ...parsed]);
       } catch {
         // ignore
       }
     }
+
+    const savedWebhook = localStorage.getItem('qa-google-chat-webhook') || process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL || '';
+    if (savedWebhook) {
+      setWebhookUrl(savedWebhook);
+    }
   }, []);
+
+  const handleSaveWebhook = () => {
+    const trimmed = webhookUrl.trim();
+    if (trimmed) {
+      localStorage.setItem('qa-google-chat-webhook', trimmed);
+      toast.success('Google Chat Webhook URL saved!');
+    } else {
+      localStorage.removeItem('qa-google-chat-webhook');
+      toast.info('Google Chat Webhook cleared');
+    }
+    setShowWebhookConfig(false);
+  };
 
   const handleAddCustomType = () => {
     const trimmed = customTypeInput.trim();
@@ -85,7 +107,6 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
     const newTypes = [...allWorkTypes, trimmed];
     setAllWorkTypes(newTypes);
 
-    // Save only the custom types to localstorage
     const customOnly = newTypes.filter(t => !WORK_TYPES.includes(t as any));
     localStorage.setItem('qa-custom-work-types', JSON.stringify(customOnly));
 
@@ -134,6 +155,8 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
 
     try {
       const empId = selectedEmpId;
+      const matchedEmp = REPORTING_ENGINEERS.find(e => e.id === empId);
+      const empName = matchedEmp?.name || employee?.name || empId;
 
       // 1. Direct browser insert to Supabase for sub-30ms instant speed
       let insertSuccess = false;
@@ -168,10 +191,27 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
         }
       }
 
+      // 3. Send notification to Google Chat Space (if configured)
+      sendGoogleChatNotification({
+        employeeName: empName,
+        employeeId: empId,
+        date: selectedDate,
+        workType: formData.work_type,
+        taskPerformed: formData.task_performed.trim(),
+        status: formData.status,
+        remarks: formData.remarks?.trim() || null,
+      }).then(res => {
+        if (res.success) {
+          toast.info('Notification sent to Google Chat group!');
+        }
+      }).catch(err => {
+        console.warn('Google Chat notification background trigger failed:', err);
+      });
+
       clearDraft();
       setIsSubmitted(true);
       toast.success('Task submitted successfully!', {
-        description: 'Your daily report has been saved.',
+        description: 'Your daily report has been saved & posted.',
       });
 
       onSuccess?.();
@@ -238,14 +278,58 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
               </p>
             </div>
           </div>
-          {!existingTask && draft && Object.keys(draft).length > 0 && (
-            <Badge variant="secondary" className="text-[10px] gap-1.5 bg-primary/[0.06] text-primary border-0 font-semibold rounded-lg px-2.5">
-              <Save className="h-3 w-3" />
-              Draft saved
-            </Badge>
-          )}
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWebhookConfig(!showWebhookConfig)}
+              className="text-xs h-8 rounded-xl border-border/30 hover:bg-primary/5 font-semibold"
+            >
+              <MessageSquare className="h-3.5 w-3.5 mr-1 text-emerald-500" />
+              Google Chat Integration
+            </Button>
+            {!existingTask && draft && Object.keys(draft).length > 0 && (
+              <Badge variant="secondary" className="text-[10px] gap-1.5 bg-primary/[0.06] text-primary border-0 font-semibold rounded-lg px-2.5">
+                <Save className="h-3 w-3" />
+                Draft saved
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Google Chat Webhook Configuration Panel */}
+      {showWebhookConfig && (
+        <div className="p-4 bg-emerald-500/[0.04] border-b border-emerald-500/15 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4 text-emerald-500" />
+              <span className="text-xs font-bold text-foreground">Google Chat Group Webhook</span>
+            </div>
+            <span className="text-[10px] text-muted-foreground">Auto-post tasks to Gmail / Google Chat</span>
+          </div>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Paste Google Chat Webhook URL here (https://chat.googleapis.com/v1/spaces/...)"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              className="h-9 text-xs rounded-xl bg-background/80 border-border/30 font-medium"
+            />
+            <Button
+              type="button"
+              size="sm"
+              onClick={handleSaveWebhook}
+              className="h-9 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shrink-0"
+            >
+              Save URL
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground font-medium">
+            💡 How to get URL: In your Google Chat Space ➔ Space Name menu ➔ Apps & Integrations ➔ Webhooks ➔ Add Webhook ➔ Copy URL.
+          </p>
+        </div>
+      )}
 
       {/* Form */}
       <div className="p-6">
