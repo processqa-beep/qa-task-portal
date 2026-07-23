@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, ExternalLink } from 'lucide-react';
+import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, CheckSquare } from 'lucide-react';
 import { WORK_TYPES, TASK_STATUSES, DRAFT_STORAGE_KEY } from '@/lib/constants';
 import { TaskFormData, DailyTask } from '@/lib/types';
 import { formatDate, getToday } from '@/lib/utils';
@@ -50,10 +50,12 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
 
   const [selectedDate, setSelectedDate] = useState<string>(getToday());
 
-  // Webhook settings state
+  // Webhook settings & toggle state
   const [webhookUrl, setWebhookUrl] = useState('');
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
+  const [sendSummaryToChat, setSendSummaryToChat] = useState(true);
+  const [isSendingManualSummary, setIsSendingManualSummary] = useState(false);
 
   const [formData, setFormData] = useState<TaskFormData>({
     work_type: 'Testing',
@@ -130,10 +132,70 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
           description: res.error || 'Check your Webhook URL',
         });
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to send test message');
     } finally {
       setIsTestingWebhook(false);
+    }
+  };
+
+  const handleSendFullDaySummary = async () => {
+    setIsSendingManualSummary(true);
+    try {
+      const empId = selectedEmpId;
+      const matchedEmp = REPORTING_ENGINEERS.find(e => e.id === empId);
+      const empName = matchedEmp?.name || employee?.name || empId;
+
+      let todayTasksList: TaskItemPayload[] = [];
+      const { data: existingTasks } = await supabase
+        .from('daily_tasks')
+        .select('work_type, task_performed, status, remarks')
+        .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
+        .eq('date', selectedDate);
+
+      if (existingTasks && existingTasks.length > 0) {
+        todayTasksList = existingTasks.map(t => ({
+          work_type: t.work_type,
+          task_performed: t.task_performed,
+          status: t.status,
+          remarks: t.remarks,
+        }));
+      } else if (formData.task_performed.trim()) {
+        todayTasksList = [
+          {
+            work_type: formData.work_type,
+            task_performed: formData.task_performed.trim(),
+            status: formData.status,
+            remarks: formData.remarks?.trim() || null,
+          },
+        ];
+      }
+
+      if (todayTasksList.length === 0) {
+        toast.error('No tasks found for today to send');
+        return;
+      }
+
+      const savedWebhook = webhookUrl.trim() || localStorage.getItem('qa-google-chat-webhook') || '';
+      const res = await sendGoogleChatNotification({
+        webhookUrl: savedWebhook,
+        employeeName: empName,
+        employeeId: empId,
+        date: selectedDate,
+        tasks: todayTasksList,
+      });
+
+      if (res.success) {
+        toast.success(`Posted ${todayTasksList.length} task(s) to Google Chat group!`);
+      } else {
+        toast.error('Failed to post to Google Chat', {
+          description: res.error || 'Please check your Webhook URL setting',
+        });
+      }
+    } catch (err) {
+      toast.error('Error posting summary to Google Chat');
+    } finally {
+      setIsSendingManualSummary(false);
     }
   };
 
@@ -231,59 +293,60 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
         }
       }
 
-      // 2. Fetch ALL tasks for this employee on selectedDate to send complete summary to Google Chat
-      let todayTasksList: TaskItemPayload[] = [
-        {
-          work_type: formData.work_type,
-          task_performed: formData.task_performed.trim(),
-          status: formData.status,
-          remarks: formData.remarks?.trim() || null,
-        },
-      ];
+      // 2. Fetch ALL tasks for this employee on selectedDate if sendSummaryToChat is checked
+      if (sendSummaryToChat) {
+        let todayTasksList: TaskItemPayload[] = [
+          {
+            work_type: formData.work_type,
+            task_performed: formData.task_performed.trim(),
+            status: formData.status,
+            remarks: formData.remarks?.trim() || null,
+          },
+        ];
 
-      try {
-        const { data: existingTasks } = await supabase
-          .from('daily_tasks')
-          .select('work_type, task_performed, status, remarks')
-          .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
-          .eq('date', selectedDate);
+        try {
+          const { data: existingTasks } = await supabase
+            .from('daily_tasks')
+            .select('work_type, task_performed, status, remarks')
+            .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
+            .eq('date', selectedDate);
 
-        if (existingTasks && existingTasks.length > 0) {
-          todayTasksList = existingTasks.map(t => ({
-            work_type: t.work_type,
-            task_performed: t.task_performed,
-            status: t.status,
-            remarks: t.remarks,
-          }));
+          if (existingTasks && existingTasks.length > 0) {
+            todayTasksList = existingTasks.map(t => ({
+              work_type: t.work_type,
+              task_performed: t.task_performed,
+              status: t.status,
+              remarks: t.remarks,
+            }));
+          }
+        } catch {
+          // fallback to single item
         }
-      } catch {
-        // use single task payload if fetch fails
+
+        const savedWebhook = webhookUrl.trim() || localStorage.getItem('qa-google-chat-webhook') || '';
+        sendGoogleChatNotification({
+          webhookUrl: savedWebhook,
+          employeeName: empName,
+          employeeId: empId,
+          date: selectedDate,
+          tasks: todayTasksList,
+        }).then(res => {
+          if (res.success) {
+            toast.success(`Posted ${todayTasksList.length} task(s) to Google Chat group!`);
+          } else if (savedWebhook) {
+            toast.warning('Google Chat notification issue', {
+              description: res.error || 'Could not post to Google Chat',
+            });
+          }
+        }).catch(err => {
+          console.warn('Google Chat notification trigger error:', err);
+        });
       }
-
-      // 3. Send ALL tasks for today to Google Chat Space via server API
-      const savedWebhook = webhookUrl.trim() || localStorage.getItem('qa-google-chat-webhook') || '';
-      sendGoogleChatNotification({
-        webhookUrl: savedWebhook,
-        employeeName: empName,
-        employeeId: empId,
-        date: selectedDate,
-        tasks: todayTasksList,
-      }).then(res => {
-        if (res.success) {
-          toast.success(`Posted ${todayTasksList.length} task(s) to Google Chat group!`);
-        } else if (savedWebhook) {
-          toast.warning('Google Chat notification issue', {
-            description: res.error || 'Could not post to Google Chat',
-          });
-        }
-      }).catch(err => {
-        console.warn('Google Chat notification trigger error:', err);
-      });
 
       clearDraft();
       setIsSubmitted(true);
       toast.success('Task submitted successfully!', {
-        description: 'Your daily report has been saved.',
+        description: sendSummaryToChat ? 'Your daily report has been saved & posted to Google Chat.' : 'Your daily report has been saved.',
       });
 
       onSuccess?.();
@@ -314,12 +377,27 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
         </div>
         <h3 className="text-lg font-bold tracking-tight mb-1">Task Submitted Successfully!</h3>
         <p className="text-sm text-muted-foreground mb-6 font-medium">
-          Your daily report for {formatDate(selectedDate)} has been recorded and posted to Google Chat.
+          Your daily report for {formatDate(selectedDate)} has been recorded.
         </p>
-        <div className="flex gap-3">
+
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button variant="outline" onClick={handleResetForm} className="rounded-xl border-border/30 hover:bg-primary/5 font-semibold">
             <PlusCircle className="h-4 w-4 mr-2" />
             Add Another Task
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={handleSendFullDaySummary}
+            disabled={isSendingManualSummary}
+            className="rounded-xl bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20 font-bold border-0"
+          >
+            {isSendingManualSummary ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <MessageSquare className="h-4 w-4 mr-2 text-emerald-500" />
+            )}
+            Send All Today&apos;s Tasks to Google Chat
           </Button>
           <Button
             onClick={() => router.push('/dashboard')}
@@ -556,6 +634,42 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
             />
           </div>
 
+          {/* Checkbox option: Final Task of the Day / Post Summary to Google Chat */}
+          <div className="p-3.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/15 flex items-center justify-between gap-3">
+            <label htmlFor="send_summary_checkbox" className="flex items-center gap-3 cursor-pointer flex-1">
+              <input
+                type="checkbox"
+                id="send_summary_checkbox"
+                checked={sendSummaryToChat}
+                onChange={(e) => setSendSummaryToChat(e.target.checked)}
+                className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 accent-emerald-600 cursor-pointer shrink-0"
+              />
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <CheckSquare className="h-3.5 w-3.5 text-emerald-500" />
+                  Final task of today? Send full task summary to Google Chat
+                </p>
+                <p className="text-[10px] text-muted-foreground font-medium">
+                  Posts a single formatted card containing all tasks done today by this QA member.
+                </p>
+              </div>
+            </label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleSendFullDaySummary}
+              disabled={isSendingManualSummary}
+              className="text-[11px] h-8 px-3 rounded-lg border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 font-bold shrink-0 hidden sm:flex"
+            >
+              {isSendingManualSummary ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                'Send Summary Now'
+              )}
+            </Button>
+          </div>
+
           {/* Submit Button */}
           <Button
             type="submit"
@@ -570,7 +684,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
             ) : (
               <>
                 <Send className="mr-2 h-4 w-4" />
-                Submit Daily Task Report & Post to Google Chat
+                Submit Daily Task Report {sendSummaryToChat ? '& Post to Google Chat' : ''}
               </>
             )}
           </Button>

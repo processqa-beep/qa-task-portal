@@ -1,11 +1,12 @@
 'use client';
 
+import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { DailyTask, Employee } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
-import { PlusCircle, CheckCircle2, Clock, Calendar, FileX } from 'lucide-react';
+import { PlusCircle, CheckCircle2, Clock, Calendar, FileX, MessageSquare, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import {
   Table,
@@ -15,6 +16,8 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { sendGoogleChatNotification } from '@/lib/google-chat';
+import { toast } from 'sonner';
 
 interface TodayTaskProps {
   task: DailyTask | null;
@@ -24,6 +27,8 @@ interface TodayTaskProps {
 }
 
 export function TodayTask({ task, tasks = [], employees = [], isLoading }: TodayTaskProps) {
+  const [isPostingToChat, setIsPostingToChat] = useState(false);
+
   if (isLoading) {
     return (
       <div className="glass-card p-6">
@@ -86,13 +91,59 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
     todayTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
   ).length;
 
+  const handlePostTeamSummaryToChat = async () => {
+    if (todayTasks.length === 0) {
+      toast.error('No tasks submitted today yet to send');
+      return;
+    }
+
+    setIsPostingToChat(true);
+    try {
+      let totalPosted = 0;
+
+      // Group tasks by reporting member and send each member's summary card
+      for (const emp of reportingMembers) {
+        const empTasks = todayTasks.filter(
+          t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
+        );
+
+        if (empTasks.length > 0) {
+          const res = await sendGoogleChatNotification({
+            employeeName: emp.name,
+            employeeId: emp.id,
+            date: todayStr,
+            tasks: empTasks.map(t => ({
+              work_type: t.work_type,
+              task_performed: t.task_performed,
+              status: t.status,
+              remarks: t.remarks,
+            })),
+          });
+          if (res.success) totalPosted++;
+        }
+      }
+
+      if (totalPosted > 0) {
+        toast.success(`Posted today's daily summary for ${totalPosted} QA member(s) to Google Chat!`);
+      } else {
+        toast.error('Failed to post summary to Google Chat', {
+          description: 'Please make sure Google Chat Webhook URL is configured in Submit Task.',
+        });
+      }
+    } catch {
+      toast.error('Error posting summary to Google Chat');
+    } finally {
+      setIsPostingToChat(false);
+    }
+  };
+
   return (
     <div className="glass-card glow-card overflow-hidden">
       {/* Top accent bar */}
       <div className="h-1 shimmer-bg" />
 
       {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between">
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Calendar className="h-5 w-5 text-primary" />
@@ -104,12 +155,30 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
             </p>
           </div>
         </div>
-        <Link href="/submit">
-          <Button size="sm" className="shimmer-bg text-white text-xs h-9 rounded-xl shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all font-semibold">
-            <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
-            Submit / Edit Task
+
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handlePostTeamSummaryToChat}
+            disabled={isPostingToChat}
+            className="text-xs h-9 rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-bold"
+          >
+            {isPostingToChat ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
+            )}
+            Post Summary to Google Chat
           </Button>
-        </Link>
+
+          <Link href="/submit">
+            <Button size="sm" className="shimmer-bg text-white text-xs h-9 rounded-xl shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all font-semibold">
+              <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+              Submit / Edit Task
+            </Button>
+          </Link>
+        </div>
       </div>
 
       {/* Full Report Table */}
