@@ -14,6 +14,7 @@ import {
   ClipboardList,
   GitBranch,
   TrendingUp,
+  Info,
 } from 'lucide-react';
 
 const iconMap: Record<string, React.ElementType> = {
@@ -25,6 +26,7 @@ const iconMap: Record<string, React.ElementType> = {
   BarChart3,
   GitBranch,
   TrendingUp,
+  Info,
 };
 
 export function MobileNav() {

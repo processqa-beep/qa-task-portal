@@ -17,6 +17,7 @@ import {
   ChevronRight,
   GitBranch,
   TrendingUp,
+  Info,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
@@ -31,6 +32,7 @@ const iconMap: Record<string, React.ElementType> = {
   BarChart3,
   GitBranch,
   TrendingUp,
+  Info,
 };
 
 export function Sidebar() {

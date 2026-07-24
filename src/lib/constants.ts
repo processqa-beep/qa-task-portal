@@ -77,9 +77,9 @@ export const NAV_ITEMS = [
     roles: ['employee', 'leader'] as string[],
   },
   {
-    title: 'Version History',
+    title: 'About',
     href: '/version-history',
-    icon: 'GitBranch',
+    icon: 'Info',
     roles: ['employee', 'leader'] as string[],
   },
 ];
