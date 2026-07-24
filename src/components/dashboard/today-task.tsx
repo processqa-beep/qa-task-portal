@@ -4,9 +4,24 @@ import { useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { DailyTask, Employee } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
-import { PlusCircle, CheckCircle2, Clock, Calendar, FileX, MessageSquare, Loader2 } from 'lucide-react';
+import { PlusCircle, CheckCircle2, Clock, Calendar, FileX, MessageSquare, Loader2, Send } from 'lucide-react';
 import Link from 'next/link';
 import {
   Table,
@@ -28,6 +43,9 @@ interface TodayTaskProps {
 
 export function TodayTask({ task, tasks = [], employees = [], isLoading }: TodayTaskProps) {
   const [isPostingToChat, setIsPostingToChat] = useState(false);
+  const [openChatModal, setOpenChatModal] = useState(false);
+  const [postDate, setPostDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [postMemberId, setPostMemberId] = useState<string>('ALL');
 
   if (isLoading) {
     return (
@@ -91,19 +109,20 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
     todayTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
   ).length;
 
-  const handlePostTeamSummaryToChat = async () => {
-    if (todayTasks.length === 0) {
-      toast.error('No tasks submitted today yet to send');
-      return;
-    }
-
+  const handleExecutePostToChat = async () => {
     setIsPostingToChat(true);
     try {
+      // Filter tasks by selected date & selected member
+      const targetDateTasks = tasks.filter(t => t.date === postDate);
+
+      const targetMembers = postMemberId === 'ALL'
+        ? reportingMembers
+        : reportingMembers.filter(e => e.id === postMemberId);
+
       let totalPosted = 0;
 
-      // Group tasks by reporting member and send each member's summary card
-      for (const emp of reportingMembers) {
-        const empTasks = todayTasks.filter(
+      for (const emp of targetMembers) {
+        const empTasks = targetDateTasks.filter(
           t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
         );
 
@@ -111,7 +130,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           const res = await sendGoogleChatNotification({
             employeeName: emp.name,
             employeeId: emp.id,
-            date: todayStr,
+            date: postDate,
             tasks: empTasks.map(t => ({
               work_type: t.work_type,
               task_performed: t.task_performed,
@@ -124,10 +143,11 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
       }
 
       if (totalPosted > 0) {
-        toast.success(`Posted today's daily summary for ${totalPosted} QA member(s) to Google Chat!`);
+        toast.success(`Posted daily summary for ${formatDate(postDate, 'MMM dd, yyyy')} to Google Chat! (${totalPosted} member card/s)`);
+        setOpenChatModal(false);
       } else {
-        toast.error('Failed to post summary to Google Chat', {
-          description: 'Please make sure Google Chat Webhook URL is configured in Submit Task.',
+        toast.error(`No tasks found for date ${formatDate(postDate, 'MMM dd, yyyy')}`, {
+          description: 'Please select a date that has task submissions.',
         });
       }
     } catch {
@@ -160,15 +180,10 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           <Button
             size="sm"
             variant="outline"
-            onClick={handlePostTeamSummaryToChat}
-            disabled={isPostingToChat}
+            onClick={() => setOpenChatModal(true)}
             className="text-xs h-9 rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-bold"
           >
-            {isPostingToChat ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
-            )}
+            <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />
             Post Summary to Google Chat
           </Button>
 
@@ -276,6 +291,79 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           </TableBody>
         </Table>
       </div>
+
+      {/* Post to Google Chat Selection Modal */}
+      <Dialog open={openChatModal} onOpenChange={setOpenChatModal}>
+        <DialogContent className="sm:max-w-[440px] glass-card border-border/30">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold tracking-tight flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+              <MessageSquare className="h-4 w-4" />
+              Post Activity Summary to Google Chat
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 pt-2">
+            {/* Select Date */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Select Report Date *</Label>
+              <Input
+                type="date"
+                value={postDate}
+                onChange={(e) => setPostDate(e.target.value)}
+                className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-semibold"
+              />
+            </div>
+
+            {/* Select QA Member */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Select QA Member *</Label>
+              <Select value={postMemberId} onValueChange={(v) => v && setPostMemberId(v)}>
+                <SelectTrigger className="h-10 text-xs rounded-xl border-border/30 font-semibold">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="glass-card border-border/30">
+                  <SelectItem value="ALL">All QA Members (Team Summary)</SelectItem>
+                  {reportingMembers.map((emp) => (
+                    <SelectItem key={emp.id} value={emp.id}>
+                      {emp.name} ({emp.id})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground font-medium leading-relaxed bg-emerald-500/[0.04] p-3 rounded-xl border border-emerald-500/15">
+              💡 This will format all tasks submitted for <b>{formatDate(postDate, 'MMM dd, yyyy')}</b> by the selected member(s) into a card and post it to your Google Chat group space.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setOpenChatModal(false)}
+                className="rounded-xl border-border/30 font-semibold text-xs"
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                onClick={handleExecutePostToChat}
+                disabled={isPostingToChat}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-md shadow-emerald-500/20 text-xs"
+              >
+                {isPostingToChat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-3.5 w-3.5 mr-1.5" />
+                    Post to Google Chat
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
