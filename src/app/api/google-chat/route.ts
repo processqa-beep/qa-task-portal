@@ -58,11 +58,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Format all tasks into a clean, colorful Google Chat card message
-    const formattedTaskWidgets = tasks.map((t, idx) => {
+    const formattedTaskWidgets = tasks.map((t) => {
       const color = WORK_TYPE_COLORS[t.work_type] || '#2563eb';
-      const number = idx + 1;
 
-      let text = `<b>${number}.</b> &nbsp; <font color="${color}"><b>[ ${t.work_type.toUpperCase()} ]</b></font><br>`;
+      let text = `<font color="${color}"><b>[ ${t.work_type.toUpperCase()} ]</b></font><br>`;
       text += `${t.task_performed.replace(/\n/g, '<br>')}`;
       if (t.remarks) {
         text += `<br><font color="#6b7280"><i>Note: ${t.remarks}</i></font>`;
