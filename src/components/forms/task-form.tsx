@@ -588,16 +588,16 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
             <div className="flex items-center justify-between">
               <Label htmlFor="task_performed" className="text-xs font-semibold">Task Performed *</Label>
               <span className="text-[10px] text-muted-foreground font-semibold">
-                {formData.task_performed.length}/500
+                {formData.task_performed.length}/5000
               </span>
             </div>
             <Textarea
               id="task_performed"
               placeholder="Describe what you worked on today..."
               value={formData.task_performed}
-              onChange={(e) => setFormData({ ...formData, task_performed: e.target.value.slice(0, 500) })}
-              rows={4}
-              className="resize-none rounded-xl border-border/30 bg-background/60 font-medium"
+              onChange={(e) => setFormData({ ...formData, task_performed: e.target.value.slice(0, 5000) })}
+              rows={6}
+              className="resize-y min-h-[120px] rounded-xl border-border/30 bg-background/60 font-medium"
             />
           </div>
 
