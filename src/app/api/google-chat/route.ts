@@ -15,6 +15,23 @@ interface NotificationBody {
   tasks: TaskItem[];
 }
 
+const WORK_TYPE_COLORS: Record<string, string> = {
+  'Testing': '#2563eb',
+  'Regression': '#7c3aed',
+  'Automation': '#059669',
+  'Bug Verification': '#dc2626',
+  'Documentation': '#d97706',
+  'Meeting': '#0891b2',
+  'Cloud Vision': '#6d28d9',
+  'Data Analysis': '#0d9488',
+  'IMS': '#be185d',
+  'Process Audit': '#ea580c',
+  'Devlopment': '#4f46e5',
+  'Development': '#4f46e5',
+  'Additional': '#0284c7',
+  'Other': '#4b5563',
+};
+
 export async function POST(request: NextRequest) {
   try {
     const body: NotificationBody = await request.json();
@@ -40,15 +57,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Format all tasks into a single clean Google Chat card message
+    // Format all tasks into a clean, colorful Google Chat card message
     const formattedTaskWidgets = tasks.map((t, idx) => {
-      const statusEmoji = t.status === 'Completed' ? '✅' : '⏳';
-      const numEmoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣', '7️⃣', '8️⃣', '9️⃣', '🔟'][idx] || `[${idx + 1}]`;
+      const color = WORK_TYPE_COLORS[t.work_type] || '#2563eb';
+      const number = idx + 1;
 
-      let text = `${numEmoji} <b>[${t.work_type}]</b> ${statusEmoji} <i>${t.status}</i><br>`;
+      let text = `<b>${number}.</b> &nbsp; <font color="${color}"><b>[ ${t.work_type.toUpperCase()} ]</b></font><br>`;
       text += `${t.task_performed.replace(/\n/g, '<br>')}`;
       if (t.remarks) {
-        text += `<br><font color="#666666"><i>Note: ${t.remarks}</i></font>`;
+        text += `<br><font color="#6b7280"><i>Note: ${t.remarks}</i></font>`;
       }
       return {
         textParagraph: {
@@ -63,14 +80,14 @@ export async function POST(request: NextRequest) {
           cardId: `daily-report-${employeeId}-${Date.now()}`,
           card: {
             header: {
-              title: `📋 QA Daily Report Submitted`,
-              subtitle: `${employeeName} (${employeeId}) · ${date}`,
+              title: `📋 QA Daily Activity Report`,
+              subtitle: `👤 ${employeeName} (${employeeId}) · 📅 ${date}`,
               imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906343.png',
               imageType: 'CIRCLE',
             },
             sections: [
               {
-                header: `<b>Today's Submitted Tasks (${tasks.length})</b>`,
+                header: `<b>Daily Tasks (${tasks.length})</b>`,
                 widgets: formattedTaskWidgets,
               },
             ],
