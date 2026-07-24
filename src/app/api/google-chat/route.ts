@@ -32,6 +32,22 @@ const WORK_TYPE_COLORS: Record<string, string> = {
   'Other': '#4b5563',
 };
 
+function formatDateNice(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'long',
+        year: 'numeric',
+      });
+    }
+  } catch {
+    // fallback
+  }
+  return dateStr;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: NotificationBody = await request.json();
@@ -57,12 +73,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Format all tasks into a clean, colorful Google Chat card message
-    const formattedTaskWidgets = tasks.map((t) => {
-      const color = WORK_TYPE_COLORS[t.work_type] || '#2563eb';
+    const niceDate = formatDateNice(date);
 
-      let text = `<font color="${color}"><b>[ ${t.work_type.toUpperCase()} ]</b></font><br>`;
-      text += `${t.task_performed.replace(/\n/g, '<br>')}`;
+    // Format all tasks with serial numbers & colorful work types:
+    // "1. DEVLOPMENT: Task details..."
+    const formattedTaskWidgets = tasks.map((t, idx) => {
+      const color = WORK_TYPE_COLORS[t.work_type] || '#2563eb';
+      const number = idx + 1;
+
+      let text = `<b>${number}.</b> &nbsp; <font color="${color}"><b>${t.work_type.toUpperCase()}:</b></font> ${t.task_performed.replace(/\n/g, '<br>')}`;
       if (t.remarks) {
         text += `<br><font color="#6b7280"><i>Note: ${t.remarks}</i></font>`;
       }
@@ -79,14 +98,14 @@ export async function POST(request: NextRequest) {
           cardId: `daily-report-${employeeId}-${Date.now()}`,
           card: {
             header: {
-              title: `📋 QA Daily Activity Report`,
-              subtitle: `👤 ${employeeName} (${employeeId}) · 📅 ${date}`,
+              title: `📋 QA Activity Report for ${employeeName} (${employeeId})`,
+              subtitle: `📅 ${niceDate}`,
               imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906343.png',
               imageType: 'CIRCLE',
             },
             sections: [
               {
-                header: `<b>Daily Tasks (${tasks.length})</b>`,
+                header: `<b>Daily Tasks Summary (${tasks.length})</b>`,
                 widgets: formattedTaskWidgets,
               },
             ],
