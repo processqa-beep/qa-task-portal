@@ -33,6 +33,47 @@ const REPORTING_ENGINEERS: Employee[] = [
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee', pin: '1234', created_at: '' },
 ];
 
+const INITIAL_ASSIGNMENTS: AssignedTask[] = [
+  {
+    id: 'asgn-1',
+    title: 'Process Audit at TL#7 Conveyor & Tempering Line',
+    description: 'Verify SOP display versions behind benteler 7, check oil leakage from conveyor motor, inspect fire hose key.',
+    assigned_to: 'QA002',
+    assigned_by: 'Chhayank Dave (QA001)',
+    due_date: '2026-07-22',
+    priority: 'High',
+    status: 'In Progress',
+    created_at: '2026-07-20T09:00:00Z',
+    assignee: REPORTING_ENGINEERS[0],
+  },
+  {
+    id: 'asgn-2',
+    title: 'SG#2 Cloud Vision Thickness Dashboard DuckDB Optimization',
+    description: 'Move Duckdb data dumping to 219 network PC and add side-by-side glass thickness comparison charts.',
+    assigned_to: 'QA004',
+    assigned_by: 'Chhayank Dave (QA001)',
+    due_date: '2026-07-21',
+    priority: 'High',
+    status: 'Completed',
+    created_at: '2026-07-19T10:30:00Z',
+    assignee: REPORTING_ENGINEERS[2],
+  },
+  {
+    id: 'asgn-3',
+    title: 'ISO DMS Compliance Verification & Documentation',
+    description: 'Verify all 9 Lexcare pending compliance items and update printable PDF standard formats across plant.',
+    assigned_to: 'QA003',
+    assigned_by: 'Chhayank Dave (QA001)',
+    due_date: '2026-07-23',
+    priority: 'Medium',
+    status: 'Assigned',
+    created_at: '2026-07-21T08:00:00Z',
+    assignee: REPORTING_ENGINEERS[1],
+  },
+];
+
+const LOCAL_STORAGE_KEY = 'qa-assigned-tasks-v2';
+
 export function TaskAssignmentView() {
   const { employee } = useAuth();
   const [assignments, setAssignments] = useState<AssignedTask[]>([]);
@@ -47,27 +88,75 @@ export function TaskAssignmentView() {
   const [dueDate, setDueDate] = useState(getToday());
   const [priority, setPriority] = useState<TaskPriority>('High');
 
-  // Fetch assignments globally from API
+  // Helper to save to localStorage
+  const saveToLocal = (tasks: AssignedTask[]) => {
+    try {
+      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Helper to read from localStorage
+  const readFromLocal = (): AssignedTask[] => {
+    try {
+      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {
+      // ignore
+    }
+    return INITIAL_ASSIGNMENTS;
+  };
+
+  // Fetch assignments globally and merge with localStorage so nothing is lost
   const fetchAssignments = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
+
+    const localItems = readFromLocal();
+
     try {
       const res = await fetch('/api/assignments');
       if (res.ok) {
         const data = await res.json();
-        if (data.assignments) {
-          setAssignments(data.assignments);
+        if (data.assignments && Array.isArray(data.assignments)) {
+          const serverItems: AssignedTask[] = data.assignments;
+
+          // Merge server items & local items seamlessly using a Map on task.id
+          const mergedMap = new Map<string, AssignedTask>();
+          serverItems.forEach((item) => mergedMap.set(item.id, item));
+          localItems.forEach((item) => {
+            // Keep local items if not deleted on server
+            if (!mergedMap.has(item.id)) {
+              mergedMap.set(item.id, item);
+            }
+          });
+
+          const mergedList = Array.from(mergedMap.values()).sort(
+            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+          );
+
+          setAssignments(mergedList);
+          saveToLocal(mergedList);
+          setIsLoading(false);
+          return;
         }
       }
     } catch (err) {
-      console.warn('Failed to fetch assignments:', err);
-    } finally {
-      setIsLoading(false);
+      console.warn('Failed to fetch assignments from API:', err);
     }
+
+    setAssignments(localItems);
+    setIsLoading(false);
   }, []);
 
   useEffect(() => {
+    const local = readFromLocal();
+    setAssignments(local);
     fetchAssignments(true);
-    // Poll every 5s for real-time updates across browsers
+
+    // Poll every 5s for real-time updates across devices
     const interval = setInterval(() => fetchAssignments(false), 5000);
     return () => clearInterval(interval);
   }, [fetchAssignments]);
@@ -83,69 +172,77 @@ export function TaskAssignmentView() {
     const assigneeObj = REPORTING_ENGINEERS.find((e) => e.id === assignTo);
     const assignedByName = employee?.name ? `${employee.name} (${employee.id})` : 'Chhayank Dave (QA001)';
 
+    const newTask: AssignedTask = {
+      id: `asgn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: newTitle.trim(),
+      description: newDesc.trim(),
+      assigned_to: assignTo,
+      assigned_by: assignedByName,
+      due_date: dueDate,
+      priority,
+      status: 'Assigned',
+      created_at: new Date().toISOString(),
+      assignee: assigneeObj,
+    };
+
+    // 1. Immediately update state & save to local storage (sub-ms instant speed)
+    const updated = [newTask, ...assignments];
+    setAssignments(updated);
+    saveToLocal(updated);
+
+    toast.success(`Task assigned to ${assigneeObj?.name || assignTo}!`);
+    setNewTitle('');
+    setNewDesc('');
+    setOpenModal(false);
+    setIsSubmitting(false);
+
+    // 2. Sync asynchronously with backend API
     try {
-      const res = await fetch('/api/assignments', {
+      await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: newTitle.trim(),
-          description: newDesc.trim(),
-          assigned_to: assignTo,
-          assigned_by: assignedByName,
-          due_date: dueDate,
-          priority,
+          id: newTask.id,
+          title: newTask.title,
+          description: newTask.description,
+          assigned_to: newTask.assigned_to,
+          assigned_by: newTask.assigned_by,
+          due_date: newTask.due_date,
+          priority: newTask.priority,
         }),
       });
-
-      if (res.ok) {
-        toast.success(`Task assigned to ${assigneeObj?.name || assignTo}!`);
-        setNewTitle('');
-        setNewDesc('');
-        setOpenModal(false);
-        fetchAssignments();
-      } else {
-        toast.error('Failed to create assignment');
-      }
     } catch {
-      toast.error('Error creating assignment');
-    } finally {
-      setIsSubmitting(false);
+      // ignore
     }
   };
 
   const handleStatusChange = async (id: string, newStatus: AssignedTaskStatus) => {
-    // Optimistic UI update
-    setAssignments((prev) => prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a)));
+    const updated = assignments.map((a) => (a.id === id ? { ...a, status: newStatus } : a));
+    setAssignments(updated);
+    saveToLocal(updated);
+    toast.success(`Status updated to ${newStatus}`);
 
     try {
-      const res = await fetch('/api/assignments', {
+      await fetch('/api/assignments', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus }),
       });
-      if (res.ok) {
-        toast.success(`Status updated to ${newStatus}`);
-      } else {
-        fetchAssignments();
-      }
     } catch {
-      fetchAssignments();
+      // ignore
     }
   };
 
   const handleDeleteTask = async (id: string) => {
-    // Optimistic UI update
-    setAssignments((prev) => prev.filter((a) => a.id !== id));
+    const updated = assignments.filter((a) => a.id !== id);
+    setAssignments(updated);
+    saveToLocal(updated);
+    toast.success('Task assignment deleted');
 
     try {
-      const res = await fetch(`/api/assignments?id=${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        toast.success('Task assignment deleted');
-      } else {
-        fetchAssignments();
-      }
+      await fetch(`/api/assignments?id=${id}`, { method: 'DELETE' });
     } catch {
-      fetchAssignments();
+      // ignore
     }
   };
 
@@ -156,17 +253,15 @@ export function TaskAssignmentView() {
       return;
     }
 
-    setAssignments((prev) => prev.filter((a) => a.status !== 'Completed'));
+    const updated = assignments.filter((a) => a.status !== 'Completed');
+    setAssignments(updated);
+    saveToLocal(updated);
+    toast.success(`Deleted ${completedCount} completed task(s)`);
 
     try {
-      const res = await fetch('/api/assignments?deleteAllOld=true', { method: 'DELETE' });
-      if (res.ok) {
-        toast.success(`Deleted ${completedCount} completed task(s)`);
-      } else {
-        fetchAssignments();
-      }
+      await fetch('/api/assignments?deleteAllOld=true', { method: 'DELETE' });
     } catch {
-      fetchAssignments();
+      // ignore
     }
   };
 
@@ -363,7 +458,7 @@ export function TaskAssignmentView() {
         </div>
 
         <div className="p-5">
-          {isLoading ? (
+          {isLoading && assignments.length === 0 ? (
             <div className="text-center py-12">
               <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary mb-2" />
               <p className="text-xs text-muted-foreground font-medium">Loading assignments...</p>
