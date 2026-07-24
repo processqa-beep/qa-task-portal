@@ -139,15 +139,9 @@ export default function VersionHistoryPage() {
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-xl font-black tracking-tight text-foreground">Mehul Chikhaliya</h2>
-                  <Badge className="bg-primary/10 text-primary border-0 font-bold text-[10px] rounded-lg">
-                    Lead Developer & QA Lead
-                  </Badge>
                 </div>
-                <p className="text-xs text-muted-foreground font-medium mt-1">
-                  Process QA & Quality Engineering · Borosil Glass Works
-                </p>
-                <p className="text-[11px] text-primary font-semibold mt-0.5">
-                  ID: QA004 / QA001 · Mehul.Chikhaliya@Borosil.com
+                <p className="text-xs text-muted-foreground font-semibold mt-1">
+                  Mail: mehul.chikhaliya
                 </p>
               </div>
             </div>
