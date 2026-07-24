@@ -26,50 +26,42 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. Create indexes for performance
+-- 3. Create task_assignments table
+CREATE TABLE IF NOT EXISTS task_assignments (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  assigned_to TEXT NOT NULL,
+  assigned_by TEXT NOT NULL,
+  due_date DATE NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'High',
+  status TEXT NOT NULL DEFAULT 'Assigned',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 4. Create indexes for performance
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_employee_id ON daily_tasks(employee_id);
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_date ON daily_tasks(date);
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_status ON daily_tasks(status);
 CREATE INDEX IF NOT EXISTS idx_daily_tasks_employee_date ON daily_tasks(employee_id, date);
+CREATE INDEX IF NOT EXISTS idx_task_assignments_assigned_to ON task_assignments(assigned_to);
 
--- 4. Enable Row Level Security
+-- 5. Enable Row Level Security
 ALTER TABLE employees ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_assignments ENABLE ROW LEVEL SECURITY;
 
--- 5. Create RLS Policies
--- Allow anyone to read employees (needed for login)
-CREATE POLICY "Allow public read on employees" ON employees
-  FOR SELECT USING (true);
+-- 6. Create RLS Policies
+CREATE POLICY "Allow public read on employees" ON employees FOR SELECT USING (true);
+CREATE POLICY "Allow public read on daily_tasks" ON daily_tasks FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on daily_tasks" ON daily_tasks FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on daily_tasks" ON daily_tasks FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete on daily_tasks" ON daily_tasks FOR DELETE USING (true);
 
--- Allow anyone to read daily_tasks (auth handled at app level)
-CREATE POLICY "Allow public read on daily_tasks" ON daily_tasks
-  FOR SELECT USING (true);
-
--- Allow anyone to insert daily_tasks
-CREATE POLICY "Allow public insert on daily_tasks" ON daily_tasks
-  FOR INSERT WITH CHECK (true);
-
--- Allow anyone to update daily_tasks
-CREATE POLICY "Allow public update on daily_tasks" ON daily_tasks
-  FOR UPDATE USING (true);
-
--- Allow anyone to delete daily_tasks
-CREATE POLICY "Allow public delete on daily_tasks" ON daily_tasks
-  FOR DELETE USING (true);
-
--- 6. Create updated_at trigger
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER update_daily_tasks_updated_at
-  BEFORE UPDATE ON daily_tasks
-  FOR EACH ROW
-  EXECUTE FUNCTION update_updated_at_column();
+CREATE POLICY "Allow public read on task_assignments" ON task_assignments FOR SELECT USING (true);
+CREATE POLICY "Allow public insert on task_assignments" ON task_assignments FOR INSERT WITH CHECK (true);
+CREATE POLICY "Allow public update on task_assignments" ON task_assignments FOR UPDATE USING (true);
+CREATE POLICY "Allow public delete on task_assignments" ON task_assignments FOR DELETE USING (true);
 
 -- 7. Seed demo data
 INSERT INTO employees (id, name, role, pin) VALUES
@@ -78,33 +70,3 @@ INSERT INTO employees (id, name, role, pin) VALUES
   ('QA003', 'Priya Sharma', 'employee', '1234'),
   ('QA004', 'Ravi Kumar', 'employee', '1234')
 ON CONFLICT (id) DO NOTHING;
-
--- 8. Seed sample tasks for demo
-INSERT INTO daily_tasks (employee_id, date, work_type, task_performed, status, remarks) VALUES
-  ('QA001', CURRENT_DATE, 'Testing', 'Tested login flow and form validation for v2.1 release', 'Completed', 'All test cases passed'),
-  ('QA002', CURRENT_DATE, 'Regression', 'Ran full regression suite on payment module', 'Completed', NULL),
-  ('QA003', CURRENT_DATE, 'Automation', 'Created 15 new Selenium test scripts for checkout flow', 'Pending', 'Need to add assertions for edge cases'),
-  ('QA001', CURRENT_DATE - INTERVAL '1 day', 'Bug Verification', 'Verified 8 bug fixes from sprint 23', 'Completed', 'All bugs confirmed fixed'),
-  ('QA002', CURRENT_DATE - INTERVAL '1 day', 'Documentation', 'Updated test plan for release 2.1', 'Completed', NULL),
-  ('QA003', CURRENT_DATE - INTERVAL '1 day', 'Testing', 'Tested new dashboard features', 'Completed', NULL),
-  ('QA004', CURRENT_DATE - INTERVAL '1 day', 'Meeting', 'Sprint planning and test review', 'Completed', NULL),
-  ('QA001', CURRENT_DATE - INTERVAL '2 days', 'Automation', 'Set up CI/CD pipeline for automated tests', 'Completed', NULL),
-  ('QA002', CURRENT_DATE - INTERVAL '2 days', 'Testing', 'Tested API endpoints for user management', 'Completed', NULL),
-  ('QA004', CURRENT_DATE - INTERVAL '2 days', 'Bug Verification', 'Verified critical production bug fix', 'Completed', 'Deployed to staging'),
-  ('QA001', CURRENT_DATE - INTERVAL '3 days', 'Testing', 'Smoke testing after deployment', 'Completed', NULL),
-  ('QA002', CURRENT_DATE - INTERVAL '3 days', 'Regression', 'Regression testing on search module', 'Pending', 'Found 2 issues'),
-  ('QA003', CURRENT_DATE - INTERVAL '3 days', 'Automation', 'Updated test framework to latest version', 'Completed', NULL),
-  ('QA004', CURRENT_DATE - INTERVAL '3 days', 'Testing', 'Cross-browser testing on Safari and Firefox', 'Completed', NULL),
-  ('QA001', CURRENT_DATE - INTERVAL '4 days', 'Documentation', 'Created QA process documentation', 'Completed', NULL),
-  ('QA002', CURRENT_DATE - INTERVAL '4 days', 'Testing', 'Performance testing on report generation', 'Completed', NULL),
-  ('QA003', CURRENT_DATE - INTERVAL '4 days', 'Bug Verification', 'Verified 5 UI bugs from sprint 22', 'Completed', 'All verified'),
-  ('QA004', CURRENT_DATE - INTERVAL '4 days', 'Regression', 'Full regression on notification system', 'Completed', NULL),
-  ('QA001', CURRENT_DATE - INTERVAL '5 days', 'Meeting', 'QA sync meeting with dev team', 'Completed', NULL),
-  ('QA002', CURRENT_DATE - INTERVAL '5 days', 'Automation', 'Created API test scripts using Postman', 'Completed', NULL),
-  ('QA003', CURRENT_DATE - INTERVAL '5 days', 'Testing', 'Tested mobile responsiveness', 'Completed', NULL),
-  ('QA004', CURRENT_DATE - INTERVAL '5 days', 'Documentation', 'Updated test case repository', 'Pending', 'In progress'),
-  ('QA001', CURRENT_DATE - INTERVAL '6 days', 'Regression', 'Regression testing on auth module', 'Completed', NULL),
-  ('QA002', CURRENT_DATE - INTERVAL '6 days', 'Bug Verification', 'Verified login page bug fixes', 'Completed', NULL),
-  ('QA003', CURRENT_DATE - INTERVAL '6 days', 'Meeting', 'Sprint retrospective', 'Completed', NULL),
-  ('QA004', CURRENT_DATE - INTERVAL '6 days', 'Testing', 'Tested email notification system', 'Completed', NULL)
-ON CONFLICT (employee_id, date) DO NOTHING;
