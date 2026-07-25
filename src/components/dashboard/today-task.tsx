@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -46,6 +46,26 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   const [openChatModal, setOpenChatModal] = useState(false);
   const [postDate, setPostDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [postMemberId, setPostMemberId] = useState<string>('ALL');
+  const [webhookUrlInput, setWebhookUrlInput] = useState<string>('');
+
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : '';
+    if (saved) {
+      setWebhookUrlInput(saved);
+    } else {
+      fetch('/api/google-chat')
+        .then(res => res.json())
+        .then(data => {
+          if (data.webhookUrl) {
+            setWebhookUrlInput(data.webhookUrl);
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('qa-google-chat-webhook', data.webhookUrl);
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   if (isLoading) {
     return (
@@ -110,6 +130,18 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   ).length;
 
   const handleExecutePostToChat = async () => {
+    if (!webhookUrlInput.trim()) {
+      toast.error('Google Chat Webhook URL required', {
+        description: 'Please paste your Google Chat Webhook URL in the field below.',
+      });
+      return;
+    }
+
+    // Persist to local device storage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('qa-google-chat-webhook', webhookUrlInput.trim());
+    }
+
     setIsPostingToChat(true);
     const cleanPostDate = toStandardDateStr(postDate || todayStr);
 
@@ -181,8 +213,11 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
       }
 
       let totalPosted = 0;
+      let lastError = '';
+
       for (const group of Array.from(memberTasksMap.values())) {
         const res = await sendGoogleChatNotification({
+          webhookUrl: webhookUrlInput.trim(),
           employeeName: group.empName,
           employeeId: group.empId,
           date: cleanPostDate,
@@ -193,7 +228,11 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
             remarks: t.remarks,
           })),
         });
-        if (res.success) totalPosted++;
+        if (res.success) {
+          totalPosted++;
+        } else if (res.error) {
+          lastError = res.error;
+        }
       }
 
       if (totalPosted > 0) {
@@ -201,7 +240,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
         setOpenChatModal(false);
       } else {
         toast.error('Failed to post to Google Chat', {
-          description: 'Please check your Google Chat Webhook URL configuration.',
+          description: lastError || 'Please check your Google Chat Webhook URL configuration.',
         });
       }
     } catch {
@@ -348,7 +387,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
 
       {/* Post to Google Chat Selection Modal */}
       <Dialog open={openChatModal} onOpenChange={setOpenChatModal}>
-        <DialogContent className="sm:max-w-[440px] glass-card border-border/30">
+        <DialogContent className="sm:max-w-[460px] glass-card border-border/30">
           <DialogHeader>
             <DialogTitle className="text-base font-bold tracking-tight flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
               <MessageSquare className="h-4 w-4" />
@@ -386,8 +425,23 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
               </Select>
             </div>
 
+            {/* Webhook URL Input */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold flex items-center justify-between">
+                <span>Google Chat Webhook URL *</span>
+                <span className="text-[10px] text-muted-foreground font-medium">Shared for group</span>
+              </Label>
+              <Input
+                type="url"
+                placeholder="https://chat.googleapis.com/v1/spaces/..."
+                value={webhookUrlInput}
+                onChange={(e) => setWebhookUrlInput(e.target.value)}
+                className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-mono text-[11px]"
+              />
+            </div>
+
             <p className="text-[11px] text-muted-foreground font-medium leading-relaxed bg-emerald-500/[0.04] p-3 rounded-xl border border-emerald-500/15">
-              💡 This will format all tasks submitted for <b>{formatDate(postDate, 'MMM dd, yyyy')}</b> by the selected member(s) into a card and post it to your Google Chat group space.
+              💡 Formats tasks submitted for <b>{formatDate(postDate, 'MMM dd, yyyy')}</b> by the selected member(s) and posts to your Google Chat group space.
             </p>
 
             <div className="flex justify-end gap-2 pt-2">
