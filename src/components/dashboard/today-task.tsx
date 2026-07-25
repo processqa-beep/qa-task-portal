@@ -57,7 +57,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const todayTasks = tasks.filter(t => t.date === todayStr);
+  const todayTasks = tasks.filter(t => (t.date || '').split('T')[0] === todayStr);
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
   // Build a flat list: for each member, show all their today tasks (or one "not submitted" row)
@@ -111,9 +111,27 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
 
   const handleExecutePostToChat = async () => {
     setIsPostingToChat(true);
+    const cleanPostDate = (postDate || todayStr).split('T')[0];
+
     try {
-      // Filter tasks by selected date & selected member
-      const targetDateTasks = tasks.filter(t => t.date === postDate);
+      // 1. Fetch latest tasks for cleanPostDate from API to ensure fresh data across all devices
+      let targetDateTasks: DailyTask[] = [];
+      try {
+        const apiRes = await fetch(`/api/tasks?date_from=${cleanPostDate}&date_to=${cleanPostDate}`);
+        if (apiRes.ok) {
+          const apiData = await apiRes.json();
+          if (apiData.tasks && Array.isArray(apiData.tasks)) {
+            targetDateTasks = apiData.tasks;
+          }
+        }
+      } catch (err) {
+        console.warn('API fetch failed, falling back to local tasks prop:', err);
+      }
+
+      // 2. Fallback to local tasks array with normalized date comparison
+      if (targetDateTasks.length === 0) {
+        targetDateTasks = tasks.filter(t => (t.date || '').split('T')[0] === cleanPostDate);
+      }
 
       const targetMembers = postMemberId === 'ALL'
         ? reportingMembers
@@ -130,7 +148,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           const res = await sendGoogleChatNotification({
             employeeName: emp.name,
             employeeId: emp.id,
-            date: postDate,
+            date: cleanPostDate,
             tasks: empTasks.map(t => ({
               work_type: t.work_type,
               task_performed: t.task_performed,
@@ -143,11 +161,11 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
       }
 
       if (totalPosted > 0) {
-        toast.success(`Posted daily summary for ${formatDate(postDate, 'MMM dd, yyyy')} to Google Chat! (${totalPosted} member card/s)`);
+        toast.success(`Posted daily summary for ${formatDate(cleanPostDate, 'MMM dd, yyyy')} to Google Chat! (${totalPosted} member card/s)`);
         setOpenChatModal(false);
       } else {
-        toast.error(`No tasks found for date ${formatDate(postDate, 'MMM dd, yyyy')}`, {
-          description: 'Please select a date that has task submissions.',
+        toast.error(`No tasks found for date ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`, {
+          description: 'Please make sure a task was submitted for this date.',
         });
       }
     } catch {

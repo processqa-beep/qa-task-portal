@@ -145,22 +145,52 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
       const empId = selectedEmpId;
       const matchedEmp = REPORTING_ENGINEERS.find(e => e.id === empId);
       const empName = matchedEmp?.name || employee?.name || empId;
+      const cleanDate = (selectedDate || getToday()).split('T')[0];
 
       let todayTasksList: TaskItemPayload[] = [];
-      const { data: existingTasks } = await supabase
-        .from('daily_tasks')
-        .select('work_type, task_performed, status, remarks')
-        .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
-        .eq('date', selectedDate);
 
-      if (existingTasks && existingTasks.length > 0) {
-        todayTasksList = existingTasks.map(t => ({
-          work_type: t.work_type,
-          task_performed: t.task_performed,
-          status: t.status,
-          remarks: t.remarks,
-        }));
-      } else if (formData.task_performed.trim()) {
+      // 1. Try Supabase query
+      try {
+        const { data: existingTasks } = await supabase
+          .from('daily_tasks')
+          .select('work_type, task_performed, status, remarks')
+          .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
+          .eq('date', cleanDate);
+
+        if (existingTasks && existingTasks.length > 0) {
+          todayTasksList = existingTasks.map(t => ({
+            work_type: t.work_type,
+            task_performed: t.task_performed,
+            status: t.status,
+            remarks: t.remarks,
+          }));
+        }
+      } catch {
+        // ignore
+      }
+
+      // 2. API fallback if Supabase query returned empty
+      if (todayTasksList.length === 0) {
+        try {
+          const apiRes = await fetch(`/api/tasks?employee_id=${empId}&date_from=${cleanDate}&date_to=${cleanDate}`);
+          if (apiRes.ok) {
+            const apiData = await apiRes.json();
+            if (apiData.tasks && Array.isArray(apiData.tasks) && apiData.tasks.length > 0) {
+              todayTasksList = apiData.tasks.map((t: any) => ({
+                work_type: t.work_type,
+                task_performed: t.task_performed,
+                status: t.status,
+                remarks: t.remarks,
+              }));
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. Fallback to current form input
+      if (todayTasksList.length === 0 && formData.task_performed.trim()) {
         todayTasksList = [
           {
             work_type: formData.work_type,
@@ -172,7 +202,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
       }
 
       if (todayTasksList.length === 0) {
-        toast.error('No tasks found for today to send');
+        toast.error(`No tasks found for date ${formatDate(cleanDate, 'MMM dd, yyyy')}`);
         return;
       }
 
