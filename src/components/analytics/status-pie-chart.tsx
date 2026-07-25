@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
-import { PieChart, Pie, Cell } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import { DailyTask } from '@/lib/types';
 import { useMemo } from 'react';
 import { Target } from 'lucide-react';
@@ -24,11 +19,6 @@ export function StatusPieChart({ tasks }: StatusPieChartProps) {
     ];
   }, [tasks]);
 
-  const chartConfig = {
-    completed: { label: 'Completed', color: 'oklch(0.60 0.18 150)' },
-    pending: { label: 'Pending', color: 'oklch(0.75 0.15 80)' },
-  };
-
   const total = data.reduce((sum, d) => sum + d.value, 0);
 
   return (
@@ -40,34 +30,34 @@ export function StatusPieChart({ tasks }: StatusPieChartProps) {
         </div>
         <p className="text-[11px] text-muted-foreground font-medium">Overall task completion status</p>
       </div>
-      <div className="px-5 pb-5">
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={55}
-              outerRadius={85}
-              paddingAngle={4}
-              dataKey="value"
-              strokeWidth={0}
-              label={({ name, value }: any) => value > 0 ? `${name}: ${value}` : ''}
-              labelLine={true}
-            >
-              {data.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.fill} />
-              ))}
-            </Pie>
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <text x="50%" y="45%" textAnchor="middle" className="fill-foreground text-3xl font-black">
-              {total}
-            </text>
-            <text x="50%" y="56%" textAnchor="middle" className="fill-muted-foreground text-[11px] font-medium">
-              Total Tasks
-            </text>
-          </PieChart>
-        </ChartContainer>
+      <div className="px-5 pb-5 flex items-center justify-center">
+        <div className="h-[280px] w-full relative">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={55}
+                outerRadius={85}
+                paddingAngle={4}
+                dataKey="value"
+                strokeWidth={0}
+                label={({ name, value }: any) => value > 0 ? `${name}: ${value}` : ''}
+                labelLine={true}
+              >
+                {data.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 14, border: 'none', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }} />
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="text-3xl font-black tracking-tight">{total}</span>
+            <span className="text-[11px] text-muted-foreground font-medium">Total Tasks</span>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -1,11 +1,6 @@
 'use client';
 
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList, Tooltip } from 'recharts';
 import { DailyTask, Employee } from '@/lib/types';
 import { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
@@ -27,11 +22,6 @@ export function EmployeeComparison({ tasks, employees }: EmployeeComparisonProps
     });
   }, [tasks, employees]);
 
-  const chartConfig = {
-    completed: { label: 'Completed', color: 'oklch(0.52 0.2 270)' },
-    pending: { label: 'Pending', color: 'oklch(0.72 0.12 270)' },
-  };
-
   return (
     <div className="glass-card glow-card overflow-hidden">
       <div className="p-5 pb-3">
@@ -42,20 +32,22 @@ export function EmployeeComparison({ tasks, employees }: EmployeeComparisonProps
         <p className="text-[11px] text-muted-foreground font-medium">Compare tasks across team members</p>
       </div>
       <div className="px-5 pb-5">
-        <ChartContainer config={chartConfig} className="h-[280px] w-full">
-          <BarChart data={data} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
-            <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600 }} />
-            <YAxis tick={{ fontSize: 10, fontWeight: 500 }} allowDecimals={false} />
-            <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="completed" fill="var(--color-completed)" radius={[6, 6, 0, 0]}>
-              <LabelList dataKey="completed" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.52 0.2 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
-            </Bar>
-            <Bar dataKey="pending" fill="var(--color-pending)" radius={[6, 6, 0, 0]}>
-              <LabelList dataKey="pending" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.72 0.12 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
-            </Bar>
-          </BarChart>
-        </ChartContainer>
+        <div className="h-[280px] w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
+              <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600 }} />
+              <YAxis tick={{ fontSize: 10, fontWeight: 500 }} allowDecimals={false} />
+              <Tooltip contentStyle={{ fontSize: 11, borderRadius: 14, border: 'none', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }} />
+              <Bar dataKey="completed" fill="oklch(0.52 0.2 270)" radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="completed" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.52 0.2 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+              </Bar>
+              <Bar dataKey="pending" fill="oklch(0.72 0.12 270)" radius={[6, 6, 0, 0]}>
+                <LabelList dataKey="pending" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.72 0.12 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
       </div>
     </div>
   );
