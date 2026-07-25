@@ -32,6 +32,9 @@ const WORK_TYPE_COLORS: Record<string, string> = {
   'Other': '#4b5563',
 };
 
+// Global in-memory cache for Team Google Chat Webhook URL (synced across all devices)
+let SAVED_SERVER_WEBHOOK = process.env.GOOGLE_CHAT_WEBHOOK_URL || process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL || '';
+
 function formatDateNice(dateStr: string): string {
   try {
     const d = new Date(dateStr);
@@ -48,20 +51,33 @@ function formatDateNice(dateStr: string): string {
   return dateStr;
 }
 
+export async function GET() {
+  return NextResponse.json({ webhookUrl: SAVED_SERVER_WEBHOOK });
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: NotificationBody = await request.json();
     const { webhookUrl, employeeName, employeeId, date, tasks } = body;
 
-    // Use passed webhookUrl or server env variable
+    // If client sends a valid webhook URL, save it to server memory store so all devices (phones & PCs) share it
+    if (webhookUrl && webhookUrl.trim().startsWith('http')) {
+      SAVED_SERVER_WEBHOOK = webhookUrl.trim();
+    }
+
+    // Resolve target Webhook URL with fallback order:
+    // 1. Client passed webhookUrl
+    // 2. Server saved webhookUrl (from previous PC/device submissions)
+    // 3. Environment variables
     const targetWebhookUrl =
-      webhookUrl ||
+      (webhookUrl && webhookUrl.trim().startsWith('http') ? webhookUrl.trim() : '') ||
+      SAVED_SERVER_WEBHOOK ||
       process.env.GOOGLE_CHAT_WEBHOOK_URL ||
       process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL;
 
     if (!targetWebhookUrl) {
       return NextResponse.json(
-        { error: 'Google Chat Webhook URL is not configured. Please save your Webhook URL.' },
+        { error: 'Google Chat Webhook URL is not configured. Please save your Webhook URL once in Submit Task settings.' },
         { status: 400 }
       );
     }

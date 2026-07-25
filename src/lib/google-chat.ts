@@ -19,11 +19,29 @@ export interface SendGoogleChatParams {
 }
 
 export async function sendGoogleChatNotification(params: SendGoogleChatParams) {
-  // Retrieve webhook URL from localStorage if not passed explicitly
-  const savedWebhook =
+  // Retrieve webhook URL from params or localStorage
+  let savedWebhook =
     params.webhookUrl ||
     (typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : null) ||
     '';
+
+  // If local device has no webhook stored (e.g. mobile phone), fetch global shared webhook from server
+  if (!savedWebhook) {
+    try {
+      const getRes = await fetch('/api/google-chat');
+      if (getRes.ok) {
+        const getData = await getRes.json();
+        if (getData.webhookUrl) {
+          savedWebhook = getData.webhookUrl;
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('qa-google-chat-webhook', savedWebhook);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   try {
     const response = await fetch('/api/google-chat', {
