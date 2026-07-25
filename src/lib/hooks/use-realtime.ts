@@ -33,19 +33,23 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
       const [empRes, tasksRes] = await Promise.all([
         supabase.from('employees').select('*').order('id'),
         supabase.from('daily_tasks').select('*').order('date', { ascending: false }),
-      ]);
+      ]).catch(() => [ { data: null }, { data: null } ]);
 
       let empList: Employee[] = empRes.data || [];
       let rawTasks = tasksRes.data || [];
 
       // If browser direct query is empty/failed, fallback to API routes
       if (empList.length === 0 || rawTasks.length === 0) {
-        const [apiTasks, apiEmps] = await Promise.all([
-          fetch(`/api/tasks${!isLeader && userEmployeeId ? `?employee_id=${userEmployeeId}` : ''}`).then(r => r.json()),
-          fetch('/api/employees').then(r => r.json()),
-        ]);
-        if (apiEmps.employees) empList = apiEmps.employees;
-        if (apiTasks.tasks) rawTasks = apiTasks.tasks;
+        try {
+          const [apiTasks, apiEmps] = await Promise.all([
+            fetch(`/api/tasks${!isLeader && userEmployeeId ? `?employee_id=${userEmployeeId}` : ''}`).then(r => r.ok ? r.json() : { tasks: [] }),
+            fetch('/api/employees').then(r => r.ok ? r.json() : { employees: [] }),
+          ]);
+          if (apiEmps?.employees?.length > 0) empList = apiEmps.employees;
+          if (apiTasks?.tasks?.length > 0) rawTasks = apiTasks.tasks;
+        } catch {
+          // ignore
+        }
       }
 
       // Attach employee metadata to each task
@@ -63,13 +67,13 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
         };
       });
 
-      globalEmployeesCache = empList;
-      globalTasksCache = fullTasks;
+      if (empList.length > 0) globalEmployeesCache = empList;
+      if (fullTasks.length > 0) globalTasksCache = fullTasks;
 
-      setEmployees(empList);
-      setTasks(fullTasks);
+      setEmployees(empList.length > 0 ? empList : globalEmployeesCache);
+      setTasks(fullTasks.length > 0 ? fullTasks : globalTasksCache);
     } catch (err) {
-      console.error('Failed to load realtime data:', err);
+      console.warn('Realtime data fetch warning:', err);
     } finally {
       setIsLoading(false);
     }
@@ -78,24 +82,37 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
   useEffect(() => {
     loadData();
 
-    // Supabase Realtime WebSocket subscription
-    const tasksChannel = supabase
-      .channel('realtime_daily_tasks_channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_tasks' }, () => {
-        loadData();
-      })
-      .subscribe();
+    // Unique channel per hook instance to prevent duplicate channel name crashes
+    const instanceId = Math.random().toString(36).substring(2, 7);
 
-    const employeesChannel = supabase
-      .channel('realtime_employees_channel')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
-        loadData();
-      })
-      .subscribe();
+    let tasksChannel: any = null;
+    let employeesChannel: any = null;
+
+    try {
+      tasksChannel = supabase
+        .channel(`rt_tasks_${instanceId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'daily_tasks' }, () => {
+          loadData();
+        })
+        .subscribe();
+
+      employeesChannel = supabase
+        .channel(`rt_emps_${instanceId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, () => {
+          loadData();
+        })
+        .subscribe();
+    } catch (err) {
+      console.warn('Realtime subscription error:', err);
+    }
 
     return () => {
-      supabase.removeChannel(tasksChannel);
-      supabase.removeChannel(employeesChannel);
+      try {
+        if (tasksChannel) supabase.removeChannel(tasksChannel);
+        if (employeesChannel) supabase.removeChannel(employeesChannel);
+      } catch {
+        // ignore
+      }
     };
   }, [loadData, supabase]);
 

@@ -14,7 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
-import { useRealtimeData } from '@/lib/hooks/use-realtime';
+import { DailyTask } from '@/lib/types';
 
 interface NotificationItem {
   id: string;
@@ -39,8 +39,8 @@ const ID_NAME_MAP: Record<string, string> = {
 export function Header() {
   const { employee, isLeader, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-  const { tasks } = useRealtimeData(employee?.id, isLeader);
 
+  const [headerTasks, setHeaderTasks] = useState<DailyTask[]>([]);
   const [readIds, setReadIds] = useState<string[]>([]);
   const [clearedIds, setClearedIds] = useState<string[]>([]);
 
@@ -57,12 +57,38 @@ export function Header() {
     }
   }, []);
 
+  // Fetch tasks safely for header notifications without Supabase channel collisions
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchHeaderNotifications() {
+      try {
+        const res = await fetch('/api/tasks');
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && data.tasks && Array.isArray(data.tasks)) {
+            setHeaderTasks(data.tasks);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    fetchHeaderNotifications();
+    const interval = setInterval(fetchHeaderNotifications, 15000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, []);
+
   // Dynamically generate real notifications from real submitted tasks
   const notifications = useMemo<NotificationItem[]>(() => {
     const list: NotificationItem[] = [];
 
     // Sort tasks by date & id descending so newest task reports are on top
-    const sortedTasks = [...tasks].sort((a, b) => {
+    const sortedTasks = [...headerTasks].sort((a, b) => {
       const timeA = new Date(a.created_at || a.date).getTime();
       const timeB = new Date(b.created_at || b.date).getTime();
       return timeB - timeA;
@@ -106,7 +132,7 @@ export function Header() {
     }
 
     return list.slice(0, 15);
-  }, [tasks, readIds, clearedIds]);
+  }, [headerTasks, readIds, clearedIds]);
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
@@ -142,7 +168,7 @@ export function Header() {
           </div>
           <div>
             <p className="text-sm font-semibold tracking-tight">
-              {getGreeting()}, <span className="text-primary">{employee?.name?.split(' ')[0]}</span>
+              {getGreeting()}, <span className="text-primary">{employee?.name ? employee.name.split(' ')[0] : 'User'}</span>
             </p>
             <p className="text-[11px] text-muted-foreground hidden sm:block font-medium">
               {isLeader ? 'Team Leader Dashboard' : 'QA Member Dashboard'}
@@ -250,17 +276,17 @@ export function Header() {
                 </span>
               </div>
               <div className="hidden sm:block text-left">
-                <p className="text-sm font-semibold leading-none tracking-tight">{employee?.name}</p>
+                <p className="text-sm font-semibold leading-none tracking-tight">{employee?.name || 'QA Engineer'}</p>
                 <div className="flex items-center gap-1 mt-0.5">
                   <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-primary/5 text-primary border-0">
-                    {employee?.id}
+                    {employee?.id || 'QA'}
                   </Badge>
                 </div>
               </div>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 glass-card border-border/30">
               <div className="px-3 py-2">
-                <p className="text-sm font-semibold">{employee?.name}</p>
+                <p className="text-sm font-semibold">{employee?.name || 'QA Engineer'}</p>
                 <p className="text-xs text-muted-foreground">{employee?.id} · {employee?.role}</p>
               </div>
               <DropdownMenuSeparator />
