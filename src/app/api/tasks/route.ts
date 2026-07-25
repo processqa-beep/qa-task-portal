@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { DailyTask } from '@/lib/types';
+import { toStandardDateStr } from '@/lib/utils';
 
 // In-memory fallback tasks store for instant demo usage
 const todayStr = new Date().toISOString().split('T')[0];
@@ -145,11 +146,14 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const employeeId = searchParams.get('employee_id');
-    const dateFrom = searchParams.get('date_from');
-    const dateTo = searchParams.get('date_to');
+    const rawDateFrom = searchParams.get('date_from');
+    const rawDateTo = searchParams.get('date_to');
     const status = searchParams.get('status');
     const workType = searchParams.get('work_type');
     const limit = searchParams.get('limit');
+
+    const dateFrom = rawDateFrom ? toStandardDateStr(rawDateFrom) : null;
+    const dateTo = rawDateTo ? toStandardDateStr(rawDateTo) : null;
 
     const ID_NAME_MAP: Record<string, string> = {
       QA001: 'Chhayank Dave',
@@ -215,8 +219,8 @@ export async function GET(request: NextRequest) {
         (t) => t.employee_id === employeeId || t.employee_id === empName
       );
     }
-    if (dateFrom) filtered = filtered.filter((t) => t.date >= dateFrom);
-    if (dateTo) filtered = filtered.filter((t) => t.date <= dateTo);
+    if (dateFrom) filtered = filtered.filter((t) => toStandardDateStr(t.date) >= dateFrom);
+    if (dateTo) filtered = filtered.filter((t) => toStandardDateStr(t.date) <= dateTo);
     if (status) filtered = filtered.filter((t) => t.status === status);
     if (workType) filtered = filtered.filter((t) => t.work_type === workType);
 
@@ -240,7 +244,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const taskDate = date || new Date().toISOString().split('T')[0];
+    const taskDate = toStandardDateStr(date);
 
     try {
       const supabase = await createClient();

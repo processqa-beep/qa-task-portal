@@ -18,7 +18,7 @@ import {
 import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, CheckSquare } from 'lucide-react';
 import { WORK_TYPES, TASK_STATUSES, DRAFT_STORAGE_KEY } from '@/lib/constants';
 import { TaskFormData, DailyTask } from '@/lib/types';
-import { formatDate, getToday } from '@/lib/utils';
+import { formatDate, getToday, toStandardDateStr } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
@@ -145,7 +145,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
       const empId = selectedEmpId;
       const matchedEmp = REPORTING_ENGINEERS.find(e => e.id === empId);
       const empName = matchedEmp?.name || employee?.name || empId;
-      const cleanDate = (selectedDate || getToday()).split('T')[0];
+      const cleanDate = toStandardDateStr(selectedDate || getToday());
 
       let todayTasksList: TaskItemPayload[] = [];
 

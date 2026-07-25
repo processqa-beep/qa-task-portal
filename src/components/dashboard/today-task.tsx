@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { DailyTask, Employee } from '@/lib/types';
-import { formatDate } from '@/lib/utils';
+import { formatDate, toStandardDateStr } from '@/lib/utils';
 import { PlusCircle, CheckCircle2, Clock, Calendar, FileX, MessageSquare, Loader2, Send } from 'lucide-react';
 import Link from 'next/link';
 import {
@@ -57,7 +57,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const todayTasks = tasks.filter(t => (t.date || '').split('T')[0] === todayStr);
+  const todayTasks = tasks.filter(t => toStandardDateStr(t.date) === todayStr);
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
   // Build a flat list: for each member, show all their today tasks (or one "not submitted" row)
@@ -111,7 +111,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
 
   const handleExecutePostToChat = async () => {
     setIsPostingToChat(true);
-    const cleanPostDate = (postDate || todayStr).split('T')[0];
+    const cleanPostDate = toStandardDateStr(postDate || todayStr);
 
     try {
       // 1. Fetch latest tasks for cleanPostDate from API to ensure fresh data across all devices
@@ -130,7 +130,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
 
       // 2. Fallback to local tasks array with normalized date comparison
       if (targetDateTasks.length === 0) {
-        targetDateTasks = tasks.filter(t => (t.date || '').split('T')[0] === cleanPostDate);
+        targetDateTasks = tasks.filter(t => toStandardDateStr(t.date) === cleanPostDate);
       }
 
       const targetMembers = postMemberId === 'ALL'
