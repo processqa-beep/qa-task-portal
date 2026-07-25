@@ -73,6 +73,7 @@ const INITIAL_ASSIGNMENTS: AssignedTask[] = [
 ];
 
 const LOCAL_STORAGE_KEY = 'qa-assigned-tasks-v2';
+const DELETED_IDS_STORAGE_KEY = 'qa-assigned-deleted-ids-v2';
 
 export function TaskAssignmentView() {
   const { employee } = useAuth();
@@ -88,7 +89,30 @@ export function TaskAssignmentView() {
   const [dueDate, setDueDate] = useState(getToday());
   const [priority, setPriority] = useState<TaskPriority>('High');
 
-  // Helper to save to localStorage
+  // Helper to read deleted IDs list from localStorage
+  const getDeletedIds = (): string[] => {
+    try {
+      const stored = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
+      if (stored) return JSON.parse(stored);
+    } catch {
+      // ignore
+    }
+    return [];
+  };
+
+  // Helper to add deleted ID(s) to localStorage so deletion is permanent across reloads
+  const addDeletedIds = (ids: string | string[]) => {
+    try {
+      const current = getDeletedIds();
+      const newIds = Array.isArray(ids) ? ids : [ids];
+      const updated = Array.from(new Set([...current, ...newIds]));
+      localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  // Helper to save active tasks to localStorage
   const saveToLocal = (tasks: AssignedTask[]) => {
     try {
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
@@ -97,23 +121,28 @@ export function TaskAssignmentView() {
     }
   };
 
-  // Helper to read from localStorage
+  // Helper to read active tasks from localStorage, filtering out deleted IDs
   const readFromLocal = (): AssignedTask[] => {
+    const deletedIds = getDeletedIds();
+    let tasks: AssignedTask[] = [];
     try {
       const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
       if (stored) {
-        return JSON.parse(stored);
+        tasks = JSON.parse(stored);
+      } else {
+        tasks = INITIAL_ASSIGNMENTS;
       }
     } catch {
-      // ignore
+      tasks = INITIAL_ASSIGNMENTS;
     }
-    return INITIAL_ASSIGNMENTS;
+    return tasks.filter(t => !deletedIds.includes(t.id));
   };
 
-  // Fetch assignments globally and merge with localStorage so nothing is lost
+  // Fetch assignments globally and merge with localStorage permanently
   const fetchAssignments = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
 
+    const deletedIds = getDeletedIds();
     const localItems = readFromLocal();
 
     try {
@@ -121,14 +150,16 @@ export function TaskAssignmentView() {
       if (res.ok) {
         const data = await res.json();
         if (data.assignments && Array.isArray(data.assignments)) {
-          const serverItems: AssignedTask[] = data.assignments;
+          // Filter out deleted IDs from server items
+          const serverItems: AssignedTask[] = data.assignments.filter(
+            (item: AssignedTask) => !deletedIds.includes(item.id)
+          );
 
           // Merge server items & local items seamlessly using a Map on task.id
           const mergedMap = new Map<string, AssignedTask>();
           serverItems.forEach((item) => mergedMap.set(item.id, item));
           localItems.forEach((item) => {
-            // Keep local items if not deleted on server
-            if (!mergedMap.has(item.id)) {
+            if (!mergedMap.has(item.id) && !deletedIds.includes(item.id)) {
               mergedMap.set(item.id, item);
             }
           });
@@ -234,6 +265,9 @@ export function TaskAssignmentView() {
   };
 
   const handleDeleteTask = async (id: string) => {
+    // Save to deleted IDs blacklist so refresh never restores it
+    addDeletedIds(id);
+
     const updated = assignments.filter((a) => a.id !== id);
     setAssignments(updated);
     saveToLocal(updated);
@@ -247,16 +281,19 @@ export function TaskAssignmentView() {
   };
 
   const handleDeleteCompleted = async () => {
-    const completedCount = assignments.filter((a) => a.status === 'Completed').length;
-    if (completedCount === 0) {
+    const completedTasks = assignments.filter((a) => a.status === 'Completed');
+    if (completedTasks.length === 0) {
       toast.info('No completed tasks to delete');
       return;
     }
 
+    const completedIds = completedTasks.map(t => t.id);
+    addDeletedIds(completedIds);
+
     const updated = assignments.filter((a) => a.status !== 'Completed');
     setAssignments(updated);
     saveToLocal(updated);
-    toast.success(`Deleted ${completedCount} completed task(s)`);
+    toast.success(`Deleted ${completedTasks.length} completed task(s)`);
 
     try {
       await fetch('/api/assignments?deleteAllOld=true', { method: 'DELETE' });
@@ -279,84 +316,84 @@ export function TaskAssignmentView() {
             <ClipboardList className="h-6 w-6 text-primary" />
             Assign & Track Tasks
           </h1>
-          <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
-            Assign tasks to QA members and track progress in real-time
+          <p className="text-xs text-muted-foreground font-medium mt-0.5">
+            Assign priority operational tasks to QA team members and track completion status
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fetchAssignments(true)}
-            className="h-9 rounded-xl border-border/30 hover:bg-primary/5 text-xs font-semibold"
-          >
-            <RefreshCw className="h-3.5 w-3.5 mr-1" />
-            Refresh
+          {assignments.some((a) => a.status === 'Completed') && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteCompleted}
+              className="text-xs h-10 rounded-xl border-red-500/20 text-red-600 dark:text-red-400 hover:bg-red-500/10 font-bold"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              Clear Completed
+            </Button>
+          )}
+
+          <Button onClick={() => setOpenModal(true)} className="shimmer-bg text-white h-10 rounded-xl px-4 shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 font-bold text-xs">
+            <PlusCircle className="h-4 w-4 mr-2" />
+            Assign New Task
           </Button>
 
           <Dialog open={openModal} onOpenChange={setOpenModal}>
-            <DialogTrigger className="inline-flex items-center justify-center rounded-xl font-bold text-xs h-9 px-4 py-2 shimmer-bg text-white shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all cursor-pointer">
-              <PlusCircle className="h-4 w-4 mr-2" />
-              Assign New Task
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px] glass-card border-border/30">
+            <DialogContent className="sm:max-w-[480px] glass-card border-border/30">
               <DialogHeader>
-                <DialogTitle className="text-base font-bold tracking-tight">Assign Task to QA Member</DialogTitle>
+                <DialogTitle className="text-base font-bold tracking-tight flex items-center gap-2">
+                  <ClipboardList className="h-4 w-4 text-primary" />
+                  Assign New Task to QA Member
+                </DialogTitle>
               </DialogHeader>
+
               <form onSubmit={handleCreateAssignment} className="space-y-4 pt-2">
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Assign To QA Member *</Label>
-                  <Select value={assignTo} onValueChange={(val) => val && setAssignTo(val)}>
-                    <SelectTrigger className="h-10 rounded-xl border-border/30 bg-background/60 font-medium">
-                      <SelectValue placeholder="Select QA Member" />
-                    </SelectTrigger>
-                    <SelectContent className="glass-card border-border/30">
-                      {REPORTING_ENGINEERS.map((emp) => (
-                        <SelectItem key={emp.id} value={emp.id}>
-                          {emp.name} ({emp.id})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Task Title *</Label>
+                  <Label htmlFor="asgn-title" className="text-xs font-semibold">Task Title *</Label>
                   <Input
-                    placeholder="e.g. Process Audit at SG#3.1 Line"
+                    id="asgn-title"
+                    placeholder="e.g. Process Audit at TL#7 Conveyor"
                     value={newTitle}
                     onChange={(e) => setNewTitle(e.target.value)}
-                    className="h-10 rounded-xl border-border/30 bg-background/60 font-medium"
+                    className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-semibold"
                   />
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold">Description & Instructions *</Label>
+                  <Label htmlFor="asgn-desc" className="text-xs font-semibold">Description & Scope *</Label>
                   <Textarea
-                    placeholder="Detailed instructions for the task..."
+                    id="asgn-desc"
+                    placeholder="Provide specific instructions, items to check, or expected outcome..."
                     value={newDesc}
                     onChange={(e) => setNewDesc(e.target.value)}
                     rows={3}
-                    className="resize-none rounded-xl border-border/30 bg-background/60 font-medium"
+                    className="text-xs rounded-xl border-border/30 bg-background/60 font-medium resize-none"
                   />
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold">Due Date *</Label>
-                    <Input
-                      type="date"
-                      value={dueDate}
-                      onChange={(e) => setDueDate(e.target.value)}
-                      className="h-10 rounded-xl border-border/30 bg-background/60 font-medium"
-                    />
+                    <Label className="text-xs font-semibold">Assign To *</Label>
+                    <Select value={assignTo} onValueChange={(val) => setAssignTo(val || 'QA002')}>
+                      <SelectTrigger className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-semibold">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="glass-card border-border/30">
+                        {REPORTING_ENGINEERS.map((emp) => (
+                          <SelectItem key={emp.id} value={emp.id}>
+                            {emp.name} ({emp.id})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+
                   <div className="space-y-1.5">
                     <Label className="text-xs font-semibold">Priority *</Label>
-                    <Select value={priority} onValueChange={(val) => val && setPriority(val as TaskPriority)}>
-                      <SelectTrigger className="h-10 rounded-xl border-border/30 bg-background/60 font-medium">
-                        <SelectValue placeholder="Priority" />
+                    <Select value={priority} onValueChange={(v) => setPriority(v as TaskPriority)}>
+                      <SelectTrigger className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-semibold">
+                        <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="glass-card border-border/30">
                         <SelectItem value="High">🔴 High</SelectItem>
@@ -367,12 +404,39 @@ export function TaskAssignmentView() {
                   </div>
                 </div>
 
-                <div className="flex justify-end gap-2 pt-3">
-                  <Button type="button" variant="outline" onClick={() => setOpenModal(false)} className="rounded-xl border-border/30 font-semibold">
+                <div className="space-y-1.5">
+                  <Label htmlFor="asgn-due" className="text-xs font-semibold">Target Completion Date *</Label>
+                  <Input
+                    id="asgn-due"
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    className="h-10 text-xs rounded-xl border-border/30 bg-background/60 font-semibold"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setOpenModal(false)}
+                    className="rounded-xl border-border/30 font-semibold text-xs h-9"
+                  >
                     Cancel
                   </Button>
-                  <Button type="submit" disabled={isSubmitting} className="shimmer-bg text-white font-bold rounded-xl shadow-md shadow-primary/20">
-                    {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Assign Task'}
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="shimmer-bg text-white font-bold rounded-xl shadow-md shadow-primary/20 text-xs h-9"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <>
+                        <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                        Assign Task
+                      </>
+                    )}
                   </Button>
                 </div>
               </form>
@@ -381,185 +445,183 @@ export function TaskAssignmentView() {
         </div>
       </div>
 
-      {/* Engineer Breakdown Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {REPORTING_ENGINEERS.map((emp) => {
-          const empAssigned = assignments.filter((a) => a.assigned_to === emp.id || a.assignee?.name === emp.name);
-          const pendingCount = empAssigned.filter((a) => a.status !== 'Completed').length;
-          const completedCount = empAssigned.filter((a) => a.status === 'Completed').length;
+      {/* Filter Tabs */}
+      <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+        <div className="flex items-center gap-1 bg-muted/40 p-1 rounded-xl border border-border/20">
+          {[
+            { id: 'all', label: 'All Tasks', count: assignments.length },
+            { id: 'Assigned', label: 'Assigned', count: assignments.filter((a) => a.status === 'Assigned').length },
+            { id: 'In Progress', label: 'In Progress', count: assignments.filter((a) => a.status === 'In Progress').length },
+            { id: 'Completed', label: 'Completed', count: assignments.filter((a) => a.status === 'Completed').length },
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setFilterStatus(tab.id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                filterStatus === tab.id
+                  ? 'bg-background text-foreground shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              {tab.label} <span className="opacity-60 text-[10px]">({tab.count})</span>
+            </button>
+          ))}
+        </div>
 
-          return (
-            <div key={emp.id} className="glass-card glow-card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="h-9 w-9 rounded-xl shimmer-bg flex items-center justify-center text-white font-bold text-xs shadow-sm shadow-primary/10">
-                    {emp.name.split(' ').map((n) => n[0]).join('')}
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold tracking-tight leading-tight">{emp.name}</p>
-                    <p className="text-[10px] text-muted-foreground font-semibold">{emp.id}</p>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => fetchAssignments(true)}
+          className="text-xs h-8 text-muted-foreground hover:text-foreground font-semibold"
+        >
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+          Refresh Status
+        </Button>
+      </div>
+
+      {/* Assignments Grid */}
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Card key={i} className="glass-card h-48 animate-pulse" />
+          ))}
+        </div>
+      ) : filteredTasks.length === 0 ? (
+        <div className="glass-card glow-card p-12 text-center space-y-3">
+          <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto text-primary">
+            <ClipboardList className="h-6 w-6" />
+          </div>
+          <h3 className="text-base font-bold tracking-tight">No Task Assignments Found</h3>
+          <p className="text-xs text-muted-foreground max-w-sm mx-auto font-medium">
+            {filterStatus === 'all'
+              ? 'No tasks assigned yet. Click "Assign New Task" above to delegate a task to a QA member.'
+              : `No tasks found with status "${filterStatus}".`}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredTasks.map((task) => {
+            const isCompleted = task.status === 'Completed';
+            const isInProgress = task.status === 'In Progress';
+            const empName = task.assignee?.name || REPORTING_ENGINEERS.find(e => e.id === task.assigned_to)?.name || task.assigned_to;
+
+            return (
+              <div
+                key={task.id}
+                className={`glass-card glow-card overflow-hidden flex flex-col justify-between transition-all duration-300 ${
+                  isCompleted ? 'opacity-85 border-emerald-500/20' : ''
+                }`}
+              >
+                <div>
+                  {/* Top Bar Accent */}
+                  <div
+                    className={`h-1.5 ${
+                      task.priority === 'High'
+                        ? 'bg-red-500'
+                        : task.priority === 'Medium'
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                  />
+
+                  <div className="p-5 space-y-3">
+                    {/* Header: Priority & Status */}
+                    <div className="flex items-center justify-between gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-lg ${
+                          task.priority === 'High'
+                            ? 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/20'
+                            : task.priority === 'Medium'
+                            ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
+                            : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                        }`}
+                      >
+                        {task.priority} Priority
+                      </Badge>
+
+                      <Badge
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border-0 ${
+                          isCompleted
+                            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                            : isInProgress
+                            ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                            : 'bg-blue-500/15 text-blue-600 dark:text-blue-400'
+                        }`}
+                      >
+                        {isCompleted ? (
+                          <CheckCircle2 className="h-3 w-3 mr-1" />
+                        ) : isInProgress ? (
+                          <Clock className="h-3 w-3 mr-1" />
+                        ) : (
+                          <AlertCircle className="h-3 w-3 mr-1" />
+                        )}
+                        {task.status}
+                      </Badge>
+                    </div>
+
+                    {/* Task Title & Description */}
+                    <div>
+                      <h3 className="text-sm font-bold tracking-tight text-foreground leading-snug">
+                        {task.title}
+                      </h3>
+                      <p className="text-xs text-muted-foreground font-medium mt-1 leading-relaxed line-clamp-3">
+                        {task.description}
+                      </p>
+                    </div>
+
+                    {/* Assignee & Due Date Meta */}
+                    <div className="pt-2 border-t border-border/15 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground font-semibold flex items-center gap-1.5">
+                          <User className="h-3.5 w-3.5 text-primary" /> Assignee:
+                        </span>
+                        <span className="font-bold text-foreground">{empName}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-muted-foreground font-semibold flex items-center gap-1.5">
+                          <Calendar className="h-3.5 w-3.5 text-primary" /> Target Date:
+                        </span>
+                        <span className="font-semibold text-foreground">{formatDate(task.due_date, 'MMM dd, yyyy')}</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                <Badge variant="outline" className="text-[10px] font-bold px-2 py-0.5 rounded-lg border-border/30">
-                  {empAssigned.length} Tasks
-                </Badge>
-              </div>
 
-              <div className="flex items-center justify-between pt-1 text-[11px]">
-                <span className="text-amber-600 dark:text-amber-400 font-semibold">
-                  {pendingCount} Pending / In Progress
-                </span>
-                <span className="text-emerald-600 dark:text-emerald-400 font-semibold">
-                  {completedCount} Completed
-                </span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Filter & Assignments List */}
-      <div className="glass-card glow-card overflow-hidden">
-        <div className="p-5 pb-3 border-b border-border/15">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-bold tracking-tight">Assigned Task List</h3>
-              <p className="text-[11px] text-muted-foreground font-medium">Real-time status tracking for all assigned work</p>
-            </div>
-
-            <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex items-center gap-1 bg-muted/20 p-1 rounded-xl border border-border/20">
-                {['all', 'Assigned', 'In Progress', 'Completed'].map((st) => (
-                  <Button
-                    key={st}
-                    variant={filterStatus === st ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setFilterStatus(st)}
-                    className={`text-[11px] h-7 px-2.5 rounded-lg font-bold ${
-                      filterStatus === st ? 'shimmer-bg text-white shadow-sm' : 'hover:bg-primary/5'
-                    }`}
-                  >
-                    {st === 'all' ? `All (${assignments.length})` : st}
-                  </Button>
-                ))}
-              </div>
-
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDeleteCompleted}
-                className="text-xs h-8 rounded-xl text-red-500 hover:bg-red-500/10 hover:text-red-600 border-red-500/20 font-semibold"
-              >
-                <Trash2 className="h-3.5 w-3.5 mr-1" />
-                Clear Completed
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        <div className="p-5">
-          {isLoading && assignments.length === 0 ? (
-            <div className="text-center py-12">
-              <Loader2 className="h-6 w-6 animate-spin mx-auto text-primary mb-2" />
-              <p className="text-xs text-muted-foreground font-medium">Loading assignments...</p>
-            </div>
-          ) : filteredTasks.length === 0 ? (
-            <div className="text-center py-12">
-              <ClipboardList className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground font-medium">No assigned tasks matching status filter</p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {filteredTasks.map((task) => {
-                const assigneeName = REPORTING_ENGINEERS.find((e) => e.id === task.assigned_to)?.name || task.assigned_to;
-
-                return (
-                  <div
-                    key={task.id}
-                    className="p-4 rounded-xl border border-border/20 hover:border-primary/20 transition-all bg-background/30 space-y-3"
-                  >
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <Badge
-                          className={
-                            task.priority === 'High'
-                              ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-0 text-[9px] font-bold rounded-lg'
-                              : task.priority === 'Medium'
-                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-0 text-[9px] font-bold rounded-lg'
-                              : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-0 text-[9px] font-bold rounded-lg'
-                          }
-                        >
-                          {task.priority} Priority
-                        </Badge>
-                        <h3 className="font-bold text-xs tracking-tight">{task.title}</h3>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Badge
-                          variant="secondary"
-                          className={
-                            task.status === 'Completed'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-0 text-[9px] font-bold rounded-lg'
-                              : task.status === 'In Progress'
-                              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-0 text-[9px] font-bold rounded-lg'
-                              : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-0 text-[9px] font-bold rounded-lg'
-                          }
-                        >
-                          {task.status === 'Completed' && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                          {task.status === 'In Progress' && <Clock className="h-3 w-3 mr-1 text-blue-500" />}
-                          {task.status === 'Assigned' && <AlertCircle className="h-3 w-3 mr-1 text-amber-500" />}
-                          {task.status}
-                        </Badge>
-
-                        {/* Status Change Dropdown */}
-                        <Select
-                          value={task.status}
-                          onValueChange={(val) => val && handleStatusChange(task.id, val as AssignedTaskStatus)}
-                        >
-                          <SelectTrigger className="h-7 text-xs w-[120px] rounded-lg border-border/30 bg-background/60 font-semibold">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent className="glass-card border-border/30">
-                            <SelectItem value="Assigned">Assigned</SelectItem>
-                            <SelectItem value="In Progress">In Progress</SelectItem>
-                            <SelectItem value="Completed">Completed</SelectItem>
-                          </SelectContent>
-                        </Select>
-
-                        {/* Delete Task Button */}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDeleteTask(task.id)}
-                          className="h-7 w-7 rounded-lg text-muted-foreground/40 hover:text-red-500 hover:bg-red-500/10"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-muted-foreground leading-relaxed font-medium">{task.description}</p>
-
-                    <div className="flex flex-wrap items-center justify-between pt-2 border-t border-border/15 text-[10px] text-muted-foreground gap-2 font-medium">
-                      <div className="flex items-center gap-3 flex-wrap">
-                        <span className="flex items-center gap-1">
-                          <User className="h-3 w-3 text-primary" />
-                          Assigned to: <strong className="text-foreground font-bold">{assigneeName} ({task.assigned_to})</strong>
-                        </span>
-                        <span>Assigned by: {task.assigned_by}</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-rose-500 dark:text-rose-400 font-bold">
-                        <Calendar className="h-3 w-3" />
-                        Due: {formatDate(task.due_date, 'MMM dd, yyyy')}
-                      </div>
-                    </div>
+                {/* Footer Controls */}
+                <div className="px-5 py-3 bg-muted/[0.03] border-t border-border/15 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <Select
+                      value={task.status}
+                      onValueChange={(val) => handleStatusChange(task.id, val as AssignedTaskStatus)}
+                    >
+                      <SelectTrigger className="h-8 text-[11px] font-bold rounded-lg border-border/30 bg-background/80 w-[130px]">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="glass-card border-border/30 text-xs">
+                        <SelectItem value="Assigned">Assigned</SelectItem>
+                        <SelectItem value="In Progress">In Progress</SelectItem>
+                        <SelectItem value="Completed">Completed</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
-                );
-              })}
-            </div>
-          )}
+
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleDeleteTask(task.id)}
+                    className="h-8 w-8 text-muted-foreground hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="sr-only">Delete assignment</span>
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
-      </div>
+      )}
     </div>
   );
 }
