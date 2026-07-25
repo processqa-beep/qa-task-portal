@@ -178,7 +178,7 @@ export async function GET(request: NextRequest) {
         query = query.or(`employee_id.eq.${employeeId},employee_id.eq.${empName}`);
       }
       if (dateFrom) query = query.gte('date', dateFrom);
-      if (dateTo) query = query.lte('date', dateTo);
+      if (dateTo) query = query.lte('date', `${dateTo}T23:59:59.999Z`);
       if (status) query = query.eq('status', status);
       if (workType) query = query.eq('work_type', workType);
       if (limit) query = query.limit(parseInt(limit));

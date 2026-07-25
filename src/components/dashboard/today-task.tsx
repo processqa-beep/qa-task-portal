@@ -113,8 +113,19 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
     setIsPostingToChat(true);
     const cleanPostDate = toStandardDateStr(postDate || todayStr);
 
+    const ID_NAME_MAP: Record<string, string> = {
+      QA001: 'Chhayank Dave',
+      QA002: 'Hiren Dodiya',
+      QA003: 'Purvesh Kapadiya',
+      QA004: 'Mehul Chikhaliya',
+      'Chhayank Dave': 'QA001',
+      'Hiren Dodiya': 'QA002',
+      'Purvesh Kapadiya': 'QA003',
+      'Mehul Chikhaliya': 'QA004',
+    };
+
     try {
-      // 1. Fetch latest tasks for cleanPostDate from API to ensure fresh data across all devices
+      // 1. Fetch latest tasks for cleanPostDate from API
       let targetDateTasks: DailyTask[] = [];
       try {
         const apiRes = await fetch(`/api/tasks?date_from=${cleanPostDate}&date_to=${cleanPostDate}`);
@@ -128,44 +139,69 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
         console.warn('API fetch failed, falling back to local tasks prop:', err);
       }
 
-      // 2. Fallback to local tasks array with normalized date comparison
-      if (targetDateTasks.length === 0) {
-        targetDateTasks = tasks.filter(t => toStandardDateStr(t.date) === cleanPostDate);
+      // 2. Also merge with local tasks array to ensure no tasks are missed
+      const localMatched = tasks.filter(t => toStandardDateStr(t.date) === cleanPostDate);
+      const existingIds = new Set(targetDateTasks.map(t => String(t.id)));
+      for (const lt of localMatched) {
+        if (!existingIds.has(String(lt.id))) {
+          targetDateTasks.push(lt);
+        }
       }
 
-      const targetMembers = postMemberId === 'ALL'
-        ? reportingMembers
-        : reportingMembers.filter(e => e.id === postMemberId);
+      if (targetDateTasks.length === 0) {
+        toast.error(`No tasks found for date ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`, {
+          description: 'Please make sure a task was submitted for this date.',
+        });
+        return;
+      }
+
+      // 3. Group targetDateTasks dynamically by member
+      const memberTasksMap = new Map<string, { empName: string; empId: string; tasks: DailyTask[] }>();
+
+      targetDateTasks.forEach((t) => {
+        const rawEmp = t.employee_id || t.employee?.id || 'QA004';
+        const empId = ID_NAME_MAP[rawEmp] ? (rawEmp.startsWith('QA') ? rawEmp : ID_NAME_MAP[rawEmp]) : rawEmp;
+        const empName = t.employee?.name || (ID_NAME_MAP[empId] || empId);
+
+        // Filter by postMemberId if specific member selected
+        if (postMemberId !== 'ALL' && empId !== postMemberId && empName !== postMemberId) {
+          return;
+        }
+
+        const key = empId;
+        if (!memberTasksMap.has(key)) {
+          memberTasksMap.set(key, { empName, empId, tasks: [] });
+        }
+        memberTasksMap.get(key)!.tasks.push(t);
+      });
+
+      if (memberTasksMap.size === 0) {
+        toast.error(`No tasks found for selected member on ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`);
+        return;
+      }
 
       let totalPosted = 0;
-
-      for (const emp of targetMembers) {
-        const empTasks = targetDateTasks.filter(
-          t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
-        );
-
-        if (empTasks.length > 0) {
-          const res = await sendGoogleChatNotification({
-            employeeName: emp.name,
-            employeeId: emp.id,
-            date: cleanPostDate,
-            tasks: empTasks.map(t => ({
-              work_type: t.work_type,
-              task_performed: t.task_performed,
-              status: t.status,
-              remarks: t.remarks,
-            })),
-          });
-          if (res.success) totalPosted++;
-        }
+      for (const group of Array.from(memberTasksMap.values())) {
+        const res = await sendGoogleChatNotification({
+          employeeName: group.empName,
+          employeeId: group.empId,
+          date: cleanPostDate,
+          tasks: group.tasks.map(t => ({
+            work_type: t.work_type,
+            task_performed: t.task_performed,
+            status: t.status,
+            remarks: t.remarks,
+          })),
+        });
+        if (res.success) totalPosted++;
       }
 
       if (totalPosted > 0) {
         toast.success(`Posted daily summary for ${formatDate(cleanPostDate, 'MMM dd, yyyy')} to Google Chat! (${totalPosted} member card/s)`);
         setOpenChatModal(false);
       } else {
-        toast.error(`No tasks found for date ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`, {
-          description: 'Please make sure a task was submitted for this date.',
+        toast.error('Failed to post to Google Chat', {
+          description: 'Please check your Google Chat Webhook URL configuration.',
         });
       }
     } catch {
