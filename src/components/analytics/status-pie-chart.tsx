@@ -47,11 +47,13 @@ export function StatusPieChart({ tasks }: StatusPieChartProps) {
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={65}
-              outerRadius={95}
+              innerRadius={55}
+              outerRadius={85}
               paddingAngle={4}
               dataKey="value"
               strokeWidth={0}
+              label={({ name, value }: any) => value > 0 ? `${name}: ${value}` : ''}
+              labelLine={true}
             >
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />

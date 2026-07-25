@@ -5,7 +5,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList } from 'recharts';
 import { DailyTask, Employee } from '@/lib/types';
 import { useMemo } from 'react';
 import { BarChart3 } from 'lucide-react';
@@ -18,7 +18,7 @@ interface EmployeeComparisonProps {
 export function EmployeeComparison({ tasks, employees }: EmployeeComparisonProps) {
   const data = useMemo(() => {
     return employees.map((emp) => {
-      const empTasks = tasks.filter((t) => t.employee_id === emp.id);
+      const empTasks = tasks.filter((t) => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name);
       return {
         name: emp.name.split(' ')[0],
         completed: empTasks.filter((t) => t.status === 'Completed').length,
@@ -43,13 +43,17 @@ export function EmployeeComparison({ tasks, employees }: EmployeeComparisonProps
       </div>
       <div className="px-5 pb-5">
         <ChartContainer config={chartConfig} className="h-[280px] w-full">
-          <BarChart data={data} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+          <BarChart data={data} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
             <XAxis dataKey="name" tick={{ fontSize: 10, fontWeight: 600 }} />
             <YAxis tick={{ fontSize: 10, fontWeight: 500 }} allowDecimals={false} />
             <ChartTooltip content={<ChartTooltipContent />} />
-            <Bar dataKey="completed" fill="var(--color-completed)" radius={[6, 6, 0, 0]} />
-            <Bar dataKey="pending" fill="var(--color-pending)" radius={[6, 6, 0, 0]} />
+            <Bar dataKey="completed" fill="var(--color-completed)" radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="completed" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.52 0.2 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+            </Bar>
+            <Bar dataKey="pending" fill="var(--color-pending)" radius={[6, 6, 0, 0]}>
+              <LabelList dataKey="pending" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'oklch(0.72 0.12 270)' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+            </Bar>
           </BarChart>
         </ChartContainer>
       </div>

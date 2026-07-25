@@ -5,7 +5,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Cell, LabelList } from 'recharts';
 import { DailyTask } from '@/lib/types';
 import { WORK_TYPES, WORK_TYPE_COLORS } from '@/lib/constants';
 import { useMemo } from 'react';
@@ -40,12 +40,13 @@ export function WorkTypeChart({ tasks }: WorkTypeChartProps) {
       </div>
       <div className="px-5 pb-5">
         <ChartContainer config={chartConfig} className="h-[280px] w-full">
-          <BarChart data={data} layout="vertical" margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+          <BarChart data={data} layout="vertical" margin={{ top: 5, right: 25, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" horizontal={false} />
             <XAxis type="number" tick={{ fontSize: 10, fontWeight: 500 }} allowDecimals={false} />
             <YAxis dataKey="name" type="category" tick={{ fontSize: 10, fontWeight: 500 }} width={100} />
             <ChartTooltip content={<ChartTooltipContent />} />
             <Bar dataKey="count" radius={[0, 6, 6, 0]}>
+              <LabelList dataKey="count" position="right" style={{ fontSize: 11, fontWeight: 800, fill: 'currentColor' }} />
               {data.map((entry, index) => (
                 <Cell key={`cell-${index}`} fill={entry.fill} />
               ))}

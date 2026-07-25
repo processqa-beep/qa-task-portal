@@ -9,7 +9,9 @@ import {
   Tooltip,
   Legend,
   CartesianGrid,
+  LabelList,
 } from 'recharts';
+
 import { DailyTask, Employee } from '@/lib/types';
 import { useMemo } from 'react';
 import { formatDate } from '@/lib/utils';
@@ -66,7 +68,7 @@ export function QAProductivityChart({ tasks, employees }: QAProductivityChartPro
         ) : (
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+              <AreaChart data={chartData} margin={{ top: 20, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" />
                 <XAxis dataKey="dateName" style={{ fontSize: 10, fontWeight: 500 }} tickLine={false} />
                 <YAxis style={{ fontSize: 10, fontWeight: 500 }} tickLine={false} allowDecimals={false} />
@@ -86,7 +88,9 @@ export function QAProductivityChart({ tasks, employees }: QAProductivityChartPro
                         fill={colors[index % colors.length]}
                         fillOpacity={0.12}
                         strokeWidth={2.5}
-                      />
+                      >
+                        <LabelList dataKey={shortName} position="top" style={{ fontSize: 10, fontWeight: 800, fill: 'currentColor' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                      </Area>
                     );
                   })}
               </AreaChart>
