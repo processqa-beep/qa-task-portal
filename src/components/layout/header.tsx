@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '@/providers/auth-provider';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
-import { Moon, Sun, Bell, LogOut, CheckCheck, Info, CheckCircle2 } from 'lucide-react';
-import { getGreeting, getInitials } from '@/lib/utils';
+import { Moon, Sun, Bell, LogOut, CheckCheck, Info, CheckCircle2, Trash2 } from 'lucide-react';
+import { getGreeting, getInitials, formatDate } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,31 +14,122 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Badge } from '@/components/ui/badge';
+import { useRealtimeData } from '@/lib/hooks/use-realtime';
 
 interface NotificationItem {
   id: string;
   title: string;
+  subtitle: string;
   time: string;
   unread: boolean;
   type: 'task' | 'system' | 'info';
 }
 
-const INITIAL_NOTIFICATIONS: NotificationItem[] = [
-  { id: '1', title: 'Hiren Dodiya submitted today\'s report for Process Audit & IMS', time: '10 mins ago', unread: true, type: 'task' },
-  { id: '2', title: 'Mehul Chikhaliya updated SG#2 Cloud Vision Dashboard', time: '1 hour ago', unread: true, type: 'task' },
-  { id: '3', title: 'Purvesh Kapadiya active on daily task tracking', time: '2 hours ago', unread: false, type: 'info' },
-  { id: '4', title: 'Daily Report backup synced to Supabase Cloud', time: 'Today 09:00 AM', unread: false, type: 'system' },
-];
+const ID_NAME_MAP: Record<string, string> = {
+  QA001: 'Chhayank Dave',
+  QA002: 'Hiren Dodiya',
+  QA003: 'Purvesh Kapadiya',
+  QA004: 'Mehul Chikhaliya',
+  'Chhayank Dave': 'QA001',
+  'Hiren Dodiya': 'QA002',
+  'Purvesh Kapadiya': 'QA003',
+  'Mehul Chikhaliya': 'QA004',
+};
 
 export function Header() {
   const { employee, isLeader, logout } = useAuth();
   const { theme, setTheme } = useTheme();
-  const [notifications, setNotifications] = useState<NotificationItem[]>(INITIAL_NOTIFICATIONS);
+  const { tasks } = useRealtimeData(employee?.id, isLeader);
 
-  const unreadCount = notifications.filter(n => n.unread).length;
+  const [readIds, setReadIds] = useState<string[]>([]);
+  const [clearedIds, setClearedIds] = useState<string[]>([]);
+
+  // Load read and cleared notification states from localStorage
+  useEffect(() => {
+    try {
+      const savedRead = localStorage.getItem('qa-notifications-read');
+      if (savedRead) setReadIds(JSON.parse(savedRead));
+
+      const savedCleared = localStorage.getItem('qa-notifications-cleared');
+      if (savedCleared) setClearedIds(JSON.parse(savedCleared));
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Dynamically generate real notifications from real submitted tasks
+  const notifications = useMemo<NotificationItem[]>(() => {
+    const list: NotificationItem[] = [];
+
+    // Sort tasks by date & id descending so newest task reports are on top
+    const sortedTasks = [...tasks].sort((a, b) => {
+      const timeA = new Date(a.created_at || a.date).getTime();
+      const timeB = new Date(b.created_at || b.date).getTime();
+      return timeB - timeA;
+    });
+
+    // 1. Task submission notifications from real task data
+    sortedTasks.forEach((t) => {
+      const notifId = `task-${t.id}`;
+      if (clearedIds.includes(notifId)) return;
+
+      const rawEmp = t.employee_id || t.employee?.id || 'QA004';
+      const empName = t.employee?.name || ID_NAME_MAP[rawEmp] || rawEmp;
+      const empId = ID_NAME_MAP[empName] || rawEmp;
+
+      const previewText = t.task_performed
+        ? t.task_performed.length > 55
+          ? t.task_performed.slice(0, 55) + '...'
+          : t.task_performed
+        : 'Submitted daily report';
+
+      list.push({
+        id: notifId,
+        title: `${empName} (${empId}) submitted ${t.work_type} task`,
+        subtitle: previewText,
+        time: formatDate(t.created_at || t.date, 'MMM dd, yyyy · hh:mm a'),
+        unread: !readIds.includes(notifId),
+        type: 'task',
+      });
+    });
+
+    // 2. System backup status notification
+    if (!clearedIds.includes('sys-1')) {
+      list.push({
+        id: 'sys-1',
+        title: 'Daily Report Backup Synced',
+        subtitle: 'All QA task submissions synchronized to Supabase Cloud Storage',
+        time: 'Active System Sync',
+        unread: !readIds.includes('sys-1'),
+        type: 'system',
+      });
+    }
+
+    return list.slice(0, 15);
+  }, [tasks, readIds, clearedIds]);
+
+  const unreadCount = notifications.filter((n) => n.unread).length;
 
   const markAllRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, unread: false })));
+    const allIds = notifications.map((n) => n.id);
+    const updated = Array.from(new Set([...readIds, ...allIds]));
+    setReadIds(updated);
+    try {
+      localStorage.setItem('qa-notifications-read', JSON.stringify(updated));
+    } catch {
+      // ignore
+    }
+  };
+
+  const clearAllNotifications = () => {
+    const allIds = notifications.map((n) => n.id);
+    const updatedCleared = Array.from(new Set([...clearedIds, ...allIds]));
+    setClearedIds(updatedCleared);
+    try {
+      localStorage.setItem('qa-notifications-cleared', JSON.stringify(updatedCleared));
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -73,7 +164,7 @@ export function Header() {
             <span className="sr-only">Toggle theme</span>
           </Button>
 
-          {/* Interactive Notifications */}
+          {/* Interactive Dynamic Notifications */}
           <DropdownMenu>
             <DropdownMenuTrigger className="relative h-9 w-9 rounded-xl flex items-center justify-center hover:bg-primary/5 transition-colors cursor-pointer outline-none">
               <Bell className="h-[18px] w-[18px]" />
@@ -81,47 +172,71 @@ export function Header() {
                 <span className="absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full bg-primary pulse-ring" />
               )}
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80 p-2 space-y-1 glass-card border-border/30">
+            <DropdownMenuContent align="end" className="w-80 sm:w-96 p-2 space-y-1 glass-card border-border/30">
               <div className="flex items-center justify-between px-2 py-1.5">
                 <div className="flex items-center gap-2">
-                  <p className="text-xs font-bold tracking-tight">Notifications</p>
-                  {unreadCount > 0 && (
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-primary/10 text-primary border-0 font-semibold">
+                  <p className="text-xs font-bold tracking-tight">Live Notifications</p>
+                  {unreadCount > 0 ? (
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 bg-primary/10 text-primary border-0 font-bold">
                       {unreadCount} new
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[9px] px-1.5 py-0 h-4 text-muted-foreground border-border/30 font-medium">
+                      Up to date
                     </Badge>
                   )}
                 </div>
-                {unreadCount > 0 && (
-                  <button
-                    onClick={markAllRead}
-                    className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium"
-                  >
-                    <CheckCheck className="h-3 w-3" /> Mark all read
-                  </button>
-                )}
+                <div className="flex items-center gap-2">
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={markAllRead}
+                      className="text-[11px] text-primary hover:underline flex items-center gap-1 font-semibold"
+                    >
+                      <CheckCheck className="h-3 w-3" /> Mark read
+                    </button>
+                  )}
+                  {notifications.length > 0 && (
+                    <button
+                      onClick={clearAllNotifications}
+                      className="text-[11px] text-muted-foreground hover:text-red-500 hover:underline flex items-center gap-0.5 font-medium"
+                    >
+                      <Trash2 className="h-3 w-3" /> Clear
+                    </button>
+                  )}
+                </div>
               </div>
 
               <DropdownMenuSeparator />
 
-              <div className="max-h-64 overflow-y-auto space-y-1 py-1">
-                {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    className={`p-2.5 rounded-xl text-xs flex items-start gap-2.5 transition-all duration-200 ${
-                      n.unread ? 'bg-primary/[0.06]' : 'hover:bg-muted/40'
-                    }`}
-                  >
-                    {n.type === 'task' ? (
-                      <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
-                    ) : (
-                      <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium text-foreground leading-tight">{n.title}</p>
-                      <p className="text-[10px] text-muted-foreground mt-1">{n.time}</p>
-                    </div>
+              <div className="max-h-72 overflow-y-auto space-y-1.5 py-1">
+                {notifications.length === 0 ? (
+                  <div className="py-6 text-center text-muted-foreground">
+                    <Bell className="h-5 w-5 mx-auto mb-1.5 opacity-40" />
+                    <p className="text-xs font-medium">No new notifications</p>
                   </div>
-                ))}
+                ) : (
+                  notifications.map((n) => (
+                    <div
+                      key={n.id}
+                      className={`p-2.5 rounded-xl text-xs flex items-start gap-2.5 transition-all duration-200 border ${
+                        n.unread
+                          ? 'bg-primary/[0.06] border-primary/15'
+                          : 'bg-background/40 border-border/10 hover:bg-muted/40'
+                      }`}
+                    >
+                      {n.type === 'task' ? (
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500 mt-0.5 shrink-0" />
+                      ) : (
+                        <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-foreground leading-snug">{n.title}</p>
+                        <p className="text-[11px] text-muted-foreground mt-0.5 leading-normal line-clamp-2">{n.subtitle}</p>
+                        <p className="text-[9px] text-primary/70 font-semibold mt-1">{n.time}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </DropdownMenuContent>
           </DropdownMenu>
