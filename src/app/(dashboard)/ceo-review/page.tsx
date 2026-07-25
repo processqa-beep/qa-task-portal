@@ -359,13 +359,13 @@ export default function ImpactReviewPage() {
           <div className="px-5 pb-2">
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryData} margin={{ left:-10, right:5, top:20, bottom:0 }}>
+                <BarChart data={categoryData} margin={{ left:-10, right:5, top:25, bottom:0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize:10, fontWeight:600 }} tickLine={false} />
                   <YAxis tick={{ fontSize:10 }} tickLine={false} allowDecimals={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Bar dataKey="count" radius={[6,6,0,0]} barSize={28}>
-                    <LabelList dataKey="count" content={<DataLabel />} />
+                    <LabelList dataKey="count" position="top" style={{ fontSize: 11, fontWeight: 800, fill: 'currentColor' }} />
                     {categoryData.map((entry, index) => (
                       <Cell key={index} fill={entry.fill} />
                     ))}
@@ -392,9 +392,9 @@ export default function ImpactReviewPage() {
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie data={levelData} dataKey="count" nameKey="name"
-                    cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={4} strokeWidth={0}
-                    label={({ percent }: { percent?: number }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
-                    labelLine={false}
+                    cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={4} strokeWidth={0}
+                    label={({ name, value }: any) => value > 0 ? `${name}: ${value}` : ''}
+                    labelLine={true}
                   >
                     {levelData.map((entry, index) => <Cell key={index} fill={entry.fill} />)}
                   </Pie>
@@ -428,7 +428,7 @@ export default function ImpactReviewPage() {
       {/* ── CHARTS ROW 2: Member Stacked Bar + Radar ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-        {/* Member Stacked Bar with total labels */}
+        {/* Member Stacked Bar with total & segment data labels */}
         <div className="glass-card glow-card overflow-hidden">
           <div className="p-5 pb-3">
             <div className="flex items-center gap-2 mb-0.5">
@@ -440,17 +440,24 @@ export default function ImpactReviewPage() {
           <div className="px-5 pb-2">
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={memberData} margin={{ left:-10, right:5, top:20, bottom:0 }}>
+                <BarChart data={memberData} margin={{ left:-10, right:5, top:25, bottom:0 }}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border/20" vertical={false} />
                   <XAxis dataKey="name" tick={{ fontSize:11, fontWeight:700 }} tickLine={false} />
                   <YAxis tick={{ fontSize:10 }} tickLine={false} allowDecimals={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Legend wrapperStyle={{ fontSize:10, fontWeight:600, paddingTop:8 }} />
-                  <Bar dataKey="Critical" stackId="a" fill={LEVEL_COLORS.Critical} />
-                  <Bar dataKey="High"     stackId="a" fill={LEVEL_COLORS.High} />
-                  <Bar dataKey="Medium"   stackId="a" fill={LEVEL_COLORS.Medium} />
-                  <Bar dataKey="Low"      stackId="a" fill={LEVEL_COLORS.Low} radius={[6,6,0,0]}>
-                    <LabelList dataKey="Total" position="top" style={{ fontSize:10, fontWeight:700 }} />
+                  <Bar dataKey="Critical" stackId="a" fill={LEVEL_COLORS.Critical}>
+                    <LabelList dataKey="Critical" position="center" style={{ fontSize:10, fontWeight:800, fill:'#ffffff' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                  </Bar>
+                  <Bar dataKey="High" stackId="a" fill={LEVEL_COLORS.High}>
+                    <LabelList dataKey="High" position="center" style={{ fontSize:10, fontWeight:800, fill:'#ffffff' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                  </Bar>
+                  <Bar dataKey="Medium" stackId="a" fill={LEVEL_COLORS.Medium}>
+                    <LabelList dataKey="Medium" position="center" style={{ fontSize:10, fontWeight:800, fill:'#ffffff' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                  </Bar>
+                  <Bar dataKey="Low" stackId="a" fill={LEVEL_COLORS.Low} radius={[6,6,0,0]}>
+                    <LabelList dataKey="Low" position="center" style={{ fontSize:10, fontWeight:800, fill:'#ffffff' }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                    <LabelList dataKey="Total" position="top" style={{ fontSize:11, fontWeight:900, fill:'currentColor' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -477,7 +484,9 @@ export default function ImpactReviewPage() {
                   <PolarAngleAxis dataKey="category" tick={{ fontSize:9, fontWeight:600 }} />
                   {QA_MEMBERS.map((m, i) => (
                     <Radar key={m} name={m.split(' ')[0]} dataKey={m.split(' ')[0]}
-                      stroke={MEMBER_COLORS[i]} fill={MEMBER_COLORS[i]} fillOpacity={0.08} strokeWidth={2} />
+                      stroke={MEMBER_COLORS[i]} fill={MEMBER_COLORS[i]} fillOpacity={0.08} strokeWidth={2}>
+                      <LabelList position="top" style={{ fontSize: 9, fontWeight: 700, fill: MEMBER_COLORS[i] }} formatter={(v: any) => Number(v) > 0 ? String(v) : ''} />
+                    </Radar>
                   ))}
                   <Legend wrapperStyle={{ fontSize:10, fontWeight:600 }} />
                   <Tooltip content={<CustomTooltip />} />
@@ -502,7 +511,7 @@ export default function ImpactReviewPage() {
         <div className="px-5 pb-2">
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={timelineData} margin={{ left:-10, right:10, top:20 }}>
+              <AreaChart data={timelineData} margin={{ left:-10, right:10, top:25 }}>
                 <defs>
                   <linearGradient id="impactGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%"  stopColor="oklch(0.52 0.2 270)" stopOpacity={0.2} />
@@ -514,7 +523,7 @@ export default function ImpactReviewPage() {
                 <YAxis tick={{ fontSize:10 }} tickLine={false} allowDecimals={false} />
                 <Tooltip content={<CustomTooltip />} />
                 <Area type="monotone" dataKey="impacts" stroke="oklch(0.52 0.2 270)" strokeWidth={2.5} fill="url(#impactGrad)">
-                  <LabelList dataKey="impacts" position="top" style={{ fontSize:10, fontWeight:700 }} />
+                  <LabelList dataKey="impacts" position="top" style={{ fontSize:11, fontWeight:800, fill:'currentColor' }} />
                 </Area>
               </AreaChart>
             </ResponsiveContainer>
