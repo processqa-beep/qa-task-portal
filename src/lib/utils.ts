@@ -7,6 +7,7 @@ import {
   eachDayOfInterval,
   isToday,
   parseISO,
+  formatDistanceToNow,
 } from "date-fns";
 
 export function cn(...inputs: ClassValue[]) {
@@ -93,6 +94,32 @@ export function formatDate(
     const d = typeof std === "string" ? parseISO(std) : std;
     if (isNaN(d.getTime())) return String(date);
     return format(d, formatStr);
+  } catch {
+    return String(date);
+  }
+}
+
+/**
+ * Format full timestamp with actual creation time (e.g. "MMM dd, yyyy · 02:15 PM" or relative "5 mins ago")
+ */
+export function formatDateTime(date: string | Date | null | undefined): string {
+  if (!date) return "";
+  try {
+    const d = typeof date === "string" ? new Date(date) : date;
+    if (isNaN(d.getTime())) return String(date);
+
+    // If date string didn't specify time (e.g. "2026-07-28"), show clean date
+    if (typeof date === "string" && !date.includes("T") && !date.includes(":")) {
+      return format(parseISO(date), "MMM dd, yyyy");
+    }
+
+    const diffInMs = Math.abs(Date.now() - d.getTime());
+    // If created within last 24 hours, show relative time + actual time
+    if (diffInMs < 24 * 60 * 60 * 1000) {
+      return `${formatDistanceToNow(d, { addSuffix: true })} (${format(d, "hh:mm a")})`;
+    }
+
+    return format(d, "MMM dd, yyyy · hh:mm a");
   } catch {
     return String(date);
   }

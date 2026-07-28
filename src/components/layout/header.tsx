@@ -5,7 +5,7 @@ import { useAuth } from '@/providers/auth-provider';
 import { useTheme } from 'next-themes';
 import { Button } from '@/components/ui/button';
 import { Moon, Sun, Bell, LogOut, CheckCheck, Info, CheckCircle2, Trash2 } from 'lucide-react';
-import { getGreeting, getInitials, formatDate } from '@/lib/utils';
+import { getGreeting, getInitials, formatDate, formatDateTime } from '@/lib/utils';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -113,7 +113,7 @@ export function Header() {
         id: notifId,
         title: `${empName} (${empId}) submitted ${t.work_type} task`,
         subtitle: previewText,
-        time: formatDate(t.created_at || t.date, 'MMM dd, yyyy · hh:mm a'),
+        time: formatDateTime(t.created_at || t.date),
         unread: !readIds.includes(notifId),
         type: 'task',
       });

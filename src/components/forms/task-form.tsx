@@ -69,22 +69,34 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
   const supabaseRef = useRef(createClient());
   const supabase = supabaseRef.current;
 
-  // Load custom work types & webhook URL from localStorage
+  // Load dynamic work types & default Webhook URL from Supabase APIs for all devices
   useEffect(() => {
-    const storedTypes = localStorage.getItem('qa-custom-work-types');
-    if (storedTypes) {
-      try {
-        const parsed = JSON.parse(storedTypes) as string[];
-        setAllWorkTypes([...WORK_TYPES, ...parsed]);
-      } catch {
-        // ignore
-      }
-    }
+    // 1. Fetch all work types present in Supabase for cross-device sync
+    fetch('/api/work-types')
+      .then(res => res.json())
+      .then(data => {
+        if (data.workTypes && Array.isArray(data.workTypes)) {
+          setAllWorkTypes(Array.from(new Set([...WORK_TYPES, ...data.workTypes])));
+        }
+      })
+      .catch(() => {});
 
-    const savedWebhook = localStorage.getItem('qa-google-chat-webhook') || process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL || '';
+    // 2. Fetch default shared Google Chat Webhook URL across devices
+    const savedWebhook = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : '';
     if (savedWebhook) {
       setWebhookUrl(savedWebhook);
     }
+    fetch('/api/google-chat')
+      .then(res => res.json())
+      .then(data => {
+        if (data.webhookUrl) {
+          setWebhookUrl(data.webhookUrl);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('qa-google-chat-webhook', data.webhookUrl);
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
   const handleSaveWebhook = () => {
