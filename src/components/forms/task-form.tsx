@@ -54,7 +54,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
   const [webhookUrl, setWebhookUrl] = useState('');
   const [showWebhookConfig, setShowWebhookConfig] = useState(false);
   const [isTestingWebhook, setIsTestingWebhook] = useState(false);
-  const [sendSummaryToChat, setSendSummaryToChat] = useState(true);
+  const [sendSummaryToChat, setSendSummaryToChat] = useState(false);
   const [isSendingManualSummary, setIsSendingManualSummary] = useState(false);
 
   const [formData, setFormData] = useState<TaskFormData>({

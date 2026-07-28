@@ -12,7 +12,8 @@ interface EmployeeComparisonProps {
 
 export function EmployeeComparison({ tasks, employees }: EmployeeComparisonProps) {
   const data = useMemo(() => {
-    return employees.map((emp) => {
+    const reportingQA = employees.filter(emp => emp.id !== 'QA001' && emp.name !== 'Chhayank Dave');
+    return reportingQA.map((emp) => {
       const empTasks = tasks.filter((t) => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name);
       return {
         name: emp.name.split(' ')[0],

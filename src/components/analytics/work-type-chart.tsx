@@ -12,11 +12,19 @@ interface WorkTypeChartProps {
 
 export function WorkTypeChart({ tasks }: WorkTypeChartProps) {
   const data = useMemo(() => {
-    return WORK_TYPES.map((type) => ({
-      name: type,
-      count: tasks.filter((t) => t.work_type === type).length,
-      fill: WORK_TYPE_COLORS[type],
-    })).filter((d) => d.count > 0).sort((a, b) => b.count - a.count);
+    // Dynamically collect all available work types from submitted tasks & standard list
+    const allTypes = Array.from(
+      new Set([...WORK_TYPES, ...tasks.map((t) => t.work_type).filter(Boolean)])
+    );
+
+    return allTypes
+      .map((type) => ({
+        name: type,
+        count: tasks.filter((t) => t.work_type === type).length,
+        fill: WORK_TYPE_COLORS[type] || 'oklch(0.58 0.22 270)',
+      }))
+      .filter((d) => d.count > 0)
+      .sort((a, b) => b.count - a.count);
   }, [tasks]);
 
   return (

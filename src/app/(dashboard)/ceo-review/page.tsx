@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,12 +19,11 @@ import {
   PieChart, Pie,
   AreaChart, Area,
   CartesianGrid, Legend,
-  LineChart, Line,
 } from 'recharts';
 import {
   TrendingUp, PlusCircle, Trash2, CheckCircle2, Sparkles,
   Target, Zap, BarChart3, Shield, Clock, Award, AlertCircle,
-  Info,
+  Info, RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -70,28 +69,6 @@ const CAT_COLORS: Record<ImpactCategory, string> = {
   Safety:       'oklch(0.55 0.20 45)',
 };
 
-// ─── Initial Demo Data ────────────────────────────────────────────────────────
-const INITIAL_IMPACTS: ImpactEntry[] = [
-  { id:'1', taskTitle:'Kaveri 3S Customer Audit', category:'Compliance', impactLevel:'Critical',
-    description:'Completed full customer audit at Kaveri plant with zero critical deviations found.',
-    measurableResult:'100% compliance rate, 0 NCRs raised', assignee:'Hiren Dodiya', date:'2026-07-21' },
-  { id:'2', taskTitle:'DuckDB Automation Pipeline', category:'Automation', impactLevel:'High',
-    description:'Automated thickness measurement log pipeline, reducing manual reporting by 3 hours/day.',
-    measurableResult:'3 hrs/day saved, 100% data accuracy', assignee:'Mehul Chikhaliya', date:'2026-07-20' },
-  { id:'3', taskTitle:'Cloud Vision Dashboard Optimization', category:'Quality', impactLevel:'High',
-    description:'Designed comparative charts for glass width deviation tracking across Kaveri tempering line.',
-    measurableResult:'Deviation detection improved by 40%', assignee:'Mehul Chikhaliya', date:'2026-07-19' },
-  { id:'4', taskTitle:'Plant Layout & DMS Objectives', category:'Process', impactLevel:'Medium',
-    description:'Prepared comprehensive Plant Objectives Deployment matrices linked to QHSE standards.',
-    measurableResult:'12 objectives mapped, 3 plant sections covered', assignee:'Purvesh Kapadiya', date:'2026-07-18' },
-  { id:'5', taskTitle:'Anti-static Bar Bug Fix – SG#3.2', category:'Quality', impactLevel:'High',
-    description:'Resolved static anti-static bar functionality bugs in Kaveri tempering line.',
-    measurableResult:'Dust spot defects reduced by 60%', assignee:'Purvesh Kapadiya', date:'2026-07-17' },
-  { id:'6', taskTitle:'IMS Documentation Update', category:'Compliance', impactLevel:'Medium',
-    description:'Updated IMS documentation to reflect latest process changes and audit findings.',
-    measurableResult:'15 documents updated, 100% traceability', assignee:'Hiren Dodiya', date:'2026-07-16' },
-];
-
 const EMPTY_FORM = {
   taskTitle:'', category:'Quality' as ImpactCategory, impactLevel:'High' as ImpactLevel,
   description:'', measurableResult:'', assignee: QA_MEMBERS[0],
@@ -105,19 +82,6 @@ const CHART_CAPTIONS: Record<string, string> = {
   member:     'Compares each QA member\'s contribution by impact level. Taller bars = more impactful work delivered.',
   radar:      'Shows how well each QA member covers all impact categories. A wider shape means broader coverage across quality areas.',
   timeline:   'Tracks how many impactful activities were logged each day. Peaks indicate high-productivity days.',
-  quality:    'Measures the quality defect reduction rate over time. Rising line = fewer defects found, better process health.',
-  cost:       'Tracks daily time saved through automation and process improvements — directly translating to cost savings.',
-};
-
-// ─── Recharts custom label renderer ──────────────────────────────────────────
-const DataLabel = (props: any) => {
-  const { x, y, width, value } = props;
-  if (!value) return null;
-  return (
-    <text x={x + width / 2} y={y - 5} fill="currentColor" textAnchor="middle" fontSize={10} fontWeight={700} className="fill-foreground">
-      {value}
-    </text>
-  );
 };
 
 // ─── Custom Tooltip ───────────────────────────────────────────────────────────
@@ -149,11 +113,33 @@ function ChartInsight({ text }: { text: string }) {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ImpactReviewPage() {
-  const [impacts, setImpacts]         = useState<ImpactEntry[]>(INITIAL_IMPACTS);
+  const [impacts, setImpacts]         = useState<ImpactEntry[]>([]);
+  const [isLoading, setIsLoading]     = useState<boolean>(true);
   const [form, setForm]               = useState(EMPTY_FORM);
   const [showForm, setShowForm]       = useState(false);
   const [filterLevel, setFilterLevel] = useState<string>('All');
   const [filterCat, setFilterCat]     = useState<string>('All');
+
+  // Fetch entries directly from Supabase API (persisted across all devices)
+  const fetchImpacts = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ceo-review');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.impacts && Array.isArray(data.impacts)) {
+          setImpacts(data.impacts);
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch CEO impact entries:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchImpacts();
+  }, [fetchImpacts]);
 
   // ── Analytics derived data ──────────────────────────────────────────────
   const filtered = useMemo(() =>
@@ -198,37 +184,49 @@ export default function ImpactReviewPage() {
     }));
   }, [impacts]);
 
-  // Simulated quality trend (defect reduction %)
-  const qualityTrendData = useMemo(() => [
-    { week: 'Wk 1', defectRate: 8.2, target: 5 },
-    { week: 'Wk 2', defectRate: 6.5, target: 5 },
-    { week: 'Wk 3', defectRate: 5.1, target: 5 },
-    { week: 'Wk 4', defectRate: 3.8, target: 5 },
-  ], []);
-
-  // Time saved per day (cost saving proxy)
-  const timeSavedData = useMemo(() => [
-    { day: 'Mon', hours: 1.5 },
-    { day: 'Tue', hours: 2.0 },
-    { day: 'Wed', hours: 3.0 },
-    { day: 'Thu', hours: 2.5 },
-    { day: 'Fri', hours: 4.0 },
-  ], []);
-
   // KPIs
   const totalImpacts    = impacts.length;
   const criticalCount   = impacts.filter(i => i.impactLevel === 'Critical').length;
   const highCount       = impacts.filter(i => i.impactLevel === 'High').length;
   const uniqueCategories= new Set(impacts.map(i => i.category)).size;
 
-  const handleAdd = () => {
-    if (!form.taskTitle.trim() || !form.description.trim()) { toast.error('Fill in Task Title and Description'); return; }
-    setImpacts(prev => [{ ...form, id: Date.now().toString() }, ...prev]);
-    setForm(EMPTY_FORM); setShowForm(false);
-    toast.success('Impact entry added!');
+  const handleAdd = async () => {
+    if (!form.taskTitle.trim() || !form.description.trim()) {
+      toast.error('Fill in Task Title and Description');
+      return;
+    }
+
+    const newId = `imp-${Date.now()}`;
+    const newEntry: ImpactEntry = { ...form, id: newId };
+
+    setImpacts(prev => [newEntry, ...prev]);
+    setForm(EMPTY_FORM);
+    setShowForm(false);
+    toast.success('Impact entry added to Supabase!');
+
+    try {
+      await fetch('/api/ceo-review', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newEntry),
+      });
+      fetchImpacts();
+    } catch {
+      toast.error('Failed to sync to Supabase');
+    }
   };
 
-  const handleDelete = (id: string) => { setImpacts(prev => prev.filter(i => i.id !== id)); toast.success('Entry removed'); };
+  const handleDelete = async (id: string) => {
+    setImpacts(prev => prev.filter(i => i.id !== id));
+    toast.success('Entry deleted permanently from Supabase');
+
+    try {
+      await fetch(`/api/ceo-review?id=${id}`, { method: 'DELETE' });
+      fetchImpacts();
+    } catch {
+      toast.error('Failed to delete entry from Supabase');
+    }
+  };
 
   const MEMBER_COLORS = ['oklch(0.58 0.22 270)', 'oklch(0.60 0.18 150)', 'oklch(0.75 0.15 80)'];
 
@@ -243,14 +241,20 @@ export default function ImpactReviewPage() {
             Impact Review
           </h1>
           <p className="text-[11px] text-muted-foreground font-medium mt-0.5">
-            Track, measure and present QA team impact for leadership review
+            Track, measure and present QA team impact for leadership review (Stored directly in Supabase)
           </p>
         </div>
-        <Button onClick={() => setShowForm(!showForm)}
-          className="shimmer-bg text-white h-10 rounded-xl px-5 shadow-md shadow-primary/20 font-semibold text-sm">
-          <PlusCircle className="h-4 w-4 mr-2" />
-          Add Impact Entry
-        </Button>
+
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={fetchImpacts} className="h-10 text-xs rounded-xl font-semibold border-border/30">
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
+          </Button>
+          <Button onClick={() => setShowForm(!showForm)}
+            className="shimmer-bg text-white h-10 rounded-xl px-5 shadow-md shadow-primary/20 font-semibold text-sm">
+            <PlusCircle className="h-4 w-4 mr-2" />
+            Add Impact Entry
+          </Button>
+        </div>
       </div>
 
       {/* ── Add Form ── */}
