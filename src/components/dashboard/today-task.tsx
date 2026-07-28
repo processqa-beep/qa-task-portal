@@ -65,6 +65,21 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
         })
         .catch(() => {});
     }
+
+    // Auto-check @ 7 PM (19:00) if today's summary card should be posted to Google Chat
+    const currentHour = new Date().getHours();
+    if (currentHour >= 19) {
+      fetch('/api/cron/auto-post-chat')
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            toast.info('Auto 7 PM Summary Card Posted to Google Chat', {
+              description: data.message,
+            });
+          }
+        })
+        .catch(() => {});
+    }
   }, []);
 
   if (isLoading) {

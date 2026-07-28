@@ -27,10 +27,10 @@ export function QAProductivityChart({ tasks, employees }: QAProductivityChartPro
     // Filter reporting QA members only
     const reportingQA = employees.filter(e => e.id !== 'QA001');
 
-    // Get unique dates for the last 7 days
+    // Get unique dates for available active days
     const dates = Array.from(new Set(tasks.map(t => t.date)))
       .sort((a, b) => new Date(a).getTime() - new Date(b).getTime())
-      .slice(-7);
+      .slice(-14);
 
     return dates.map(date => {
       const dayData: Record<string, any> = {

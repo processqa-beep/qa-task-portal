@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '@/providers/auth-provider';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -20,7 +20,6 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import { AssignedTask, TaskPriority, AssignedTaskStatus, Employee } from '@/lib/types';
 import { formatDate, getToday } from '@/lib/utils';
@@ -32,48 +31,6 @@ const REPORTING_ENGINEERS: Employee[] = [
   { id: 'QA003', name: 'Purvesh Kapadiya', role: 'employee', pin: '1234', created_at: '' },
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee', pin: '1234', created_at: '' },
 ];
-
-const INITIAL_ASSIGNMENTS: AssignedTask[] = [
-  {
-    id: 'asgn-1',
-    title: 'Process Audit at TL#7 Conveyor & Tempering Line',
-    description: 'Verify SOP display versions behind benteler 7, check oil leakage from conveyor motor, inspect fire hose key.',
-    assigned_to: 'QA002',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-22',
-    priority: 'High',
-    status: 'In Progress',
-    created_at: '2026-07-20T09:00:00Z',
-    assignee: REPORTING_ENGINEERS[0],
-  },
-  {
-    id: 'asgn-2',
-    title: 'SG#2 Cloud Vision Thickness Dashboard DuckDB Optimization',
-    description: 'Move Duckdb data dumping to 219 network PC and add side-by-side glass thickness comparison charts.',
-    assigned_to: 'QA004',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-21',
-    priority: 'High',
-    status: 'Completed',
-    created_at: '2026-07-19T10:30:00Z',
-    assignee: REPORTING_ENGINEERS[2],
-  },
-  {
-    id: 'asgn-3',
-    title: 'ISO DMS Compliance Verification & Documentation',
-    description: 'Verify all 9 Lexcare pending compliance items and update printable PDF standard formats across plant.',
-    assigned_to: 'QA003',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-23',
-    priority: 'Medium',
-    status: 'Assigned',
-    created_at: '2026-07-21T08:00:00Z',
-    assignee: REPORTING_ENGINEERS[1],
-  },
-];
-
-const LOCAL_STORAGE_KEY = 'qa-assigned-tasks-v2';
-const DELETED_IDS_STORAGE_KEY = 'qa-assigned-deleted-ids-v2';
 
 export function TaskAssignmentView() {
   const { employee } = useAuth();
@@ -89,106 +46,32 @@ export function TaskAssignmentView() {
   const [dueDate, setDueDate] = useState(getToday());
   const [priority, setPriority] = useState<TaskPriority>('High');
 
-  // Helper to read deleted IDs list from localStorage
-  const getDeletedIds = (): string[] => {
-    try {
-      const stored = localStorage.getItem(DELETED_IDS_STORAGE_KEY);
-      if (stored) return JSON.parse(stored);
-    } catch {
-      // ignore
-    }
-    return [];
-  };
-
-  // Helper to add deleted ID(s) to localStorage so deletion is permanent across reloads
-  const addDeletedIds = (ids: string | string[]) => {
-    try {
-      const current = getDeletedIds();
-      const newIds = Array.isArray(ids) ? ids : [ids];
-      const updated = Array.from(new Set([...current, ...newIds]));
-      localStorage.setItem(DELETED_IDS_STORAGE_KEY, JSON.stringify(updated));
-    } catch {
-      // ignore
-    }
-  };
-
-  // Helper to save active tasks to localStorage
-  const saveToLocal = (tasks: AssignedTask[]) => {
-    try {
-      localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(tasks));
-    } catch {
-      // ignore
-    }
-  };
-
-  // Helper to read active tasks from localStorage, filtering out deleted IDs
-  const readFromLocal = (): AssignedTask[] => {
-    const deletedIds = getDeletedIds();
-    let tasks: AssignedTask[] = [];
-    try {
-      const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
-      if (stored) {
-        tasks = JSON.parse(stored);
-      } else {
-        tasks = INITIAL_ASSIGNMENTS;
-      }
-    } catch {
-      tasks = INITIAL_ASSIGNMENTS;
-    }
-    return tasks.filter(t => !deletedIds.includes(t.id));
-  };
-
-  // Fetch assignments globally and merge with localStorage permanently
+  // Fetch assignments directly from Supabase API (no local storage isolations)
   const fetchAssignments = useCallback(async (showLoading = false) => {
     if (showLoading) setIsLoading(true);
-
-    const deletedIds = getDeletedIds();
-    const localItems = readFromLocal();
 
     try {
       const res = await fetch('/api/assignments');
       if (res.ok) {
         const data = await res.json();
         if (data.assignments && Array.isArray(data.assignments)) {
-          // Filter out deleted IDs from server items
-          const serverItems: AssignedTask[] = data.assignments.filter(
-            (item: AssignedTask) => !deletedIds.includes(item.id)
-          );
-
-          // Merge server items & local items seamlessly using a Map on task.id
-          const mergedMap = new Map<string, AssignedTask>();
-          serverItems.forEach((item) => mergedMap.set(item.id, item));
-          localItems.forEach((item) => {
-            if (!mergedMap.has(item.id) && !deletedIds.includes(item.id)) {
-              mergedMap.set(item.id, item);
-            }
-          });
-
-          const mergedList = Array.from(mergedMap.values()).sort(
-            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-          );
-
-          setAssignments(mergedList);
-          saveToLocal(mergedList);
+          setAssignments(data.assignments);
           setIsLoading(false);
           return;
         }
       }
     } catch (err) {
-      console.warn('Failed to fetch assignments from API:', err);
+      console.warn('Failed to fetch assignments from Supabase:', err);
+    } finally {
+      setIsLoading(false);
     }
-
-    setAssignments(localItems);
-    setIsLoading(false);
   }, []);
 
   useEffect(() => {
-    const local = readFromLocal();
-    setAssignments(local);
     fetchAssignments(true);
 
-    // Poll every 5s for real-time updates across devices
-    const interval = setInterval(() => fetchAssignments(false), 5000);
+    // Poll every 4s so changes on any device automatically reflect across all devices
+    const interval = setInterval(() => fetchAssignments(false), 4000);
     return () => clearInterval(interval);
   }, [fetchAssignments]);
 
@@ -216,18 +99,16 @@ export function TaskAssignmentView() {
       assignee: assigneeObj,
     };
 
-    // 1. Immediately update state & save to local storage (sub-ms instant speed)
-    const updated = [newTask, ...assignments];
-    setAssignments(updated);
-    saveToLocal(updated);
-
+    // Optimistic UI update
+    setAssignments((prev) => [newTask, ...prev]);
     toast.success(`Task assigned to ${assigneeObj?.name || assignTo}!`);
+
     setNewTitle('');
     setNewDesc('');
     setOpenModal(false);
     setIsSubmitting(false);
 
-    // 2. Sync asynchronously with backend API
+    // Save directly to Supabase table
     try {
       await fetch('/api/assignments', {
         method: 'POST',
@@ -242,15 +123,14 @@ export function TaskAssignmentView() {
           priority: newTask.priority,
         }),
       });
+      fetchAssignments(false);
     } catch {
-      // ignore
+      toast.error('Failed to sync assignment to Supabase');
     }
   };
 
   const handleStatusChange = async (id: string, newStatus: AssignedTaskStatus) => {
-    const updated = assignments.map((a) => (a.id === id ? { ...a, status: newStatus } : a));
-    setAssignments(updated);
-    saveToLocal(updated);
+    setAssignments((prev) => prev.map((a) => (a.id === id ? { ...a, status: newStatus } : a)));
     toast.success(`Status updated to ${newStatus}`);
 
     try {
@@ -259,46 +139,39 @@ export function TaskAssignmentView() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus }),
       });
+      fetchAssignments(false);
     } catch {
-      // ignore
+      toast.error('Failed to sync status update to Supabase');
     }
   };
 
   const handleDeleteTask = async (id: string) => {
-    // Save to deleted IDs blacklist so refresh never restores it
-    addDeletedIds(id);
-
-    const updated = assignments.filter((a) => a.id !== id);
-    setAssignments(updated);
-    saveToLocal(updated);
+    setAssignments((prev) => prev.filter((a) => a.id !== id));
     toast.success('Task assignment deleted');
 
     try {
       await fetch(`/api/assignments?id=${id}`, { method: 'DELETE' });
+      fetchAssignments(false);
     } catch {
-      // ignore
+      toast.error('Failed to delete assignment from Supabase');
     }
   };
 
   const handleDeleteCompleted = async () => {
-    const completedTasks = assignments.filter((a) => a.status === 'Completed');
-    if (completedTasks.length === 0) {
+    const completedCount = assignments.filter((a) => a.status === 'Completed').length;
+    if (completedCount === 0) {
       toast.info('No completed tasks to delete');
       return;
     }
 
-    const completedIds = completedTasks.map(t => t.id);
-    addDeletedIds(completedIds);
-
-    const updated = assignments.filter((a) => a.status !== 'Completed');
-    setAssignments(updated);
-    saveToLocal(updated);
-    toast.success(`Deleted ${completedTasks.length} completed task(s)`);
+    setAssignments((prev) => prev.filter((a) => a.status !== 'Completed'));
+    toast.success(`Deleted ${completedCount} completed task(s)`);
 
     try {
       await fetch('/api/assignments?deleteAllOld=true', { method: 'DELETE' });
+      fetchAssignments(false);
     } catch {
-      // ignore
+      toast.error('Failed to clear completed assignments from Supabase');
     }
   };
 
@@ -317,7 +190,7 @@ export function TaskAssignmentView() {
             Assign & Track Tasks
           </h1>
           <p className="text-xs text-muted-foreground font-medium mt-0.5">
-            Assign priority operational tasks to QA team members and track completion status
+            Assign priority operational tasks to QA team members (Synced live via Supabase across all devices)
           </p>
         </div>
 
@@ -594,7 +467,7 @@ export function TaskAssignmentView() {
                   <div className="flex items-center gap-1.5">
                     <Select
                       value={task.status}
-                      onValueChange={(val) => handleStatusChange(task.id, val as AssignedTaskStatus)}
+                      onValueChange={(val) => val && handleStatusChange(task.id, val as AssignedTaskStatus)}
                     >
                       <SelectTrigger className="h-8 text-[11px] font-bold rounded-lg border-border/30 bg-background/80 w-[130px]">
                         <SelectValue />

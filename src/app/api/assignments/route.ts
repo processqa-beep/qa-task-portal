@@ -8,8 +8,8 @@ const REPORTING_ENGINEERS: Employee[] = [
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee' as const, pin: '1234', created_at: '' },
 ];
 
-// Global in-memory assignments store (shared across server sessions)
-let GLOBAL_ASSIGNMENTS: AssignedTask[] = [
+// Seed assignments for initial setup if Supabase table is empty
+const INITIAL_SEED_ASSIGNMENTS: AssignedTask[] = [
   {
     id: 'asgn-1',
     title: 'Process Audit at TL#7 Conveyor & Tempering Line',
@@ -48,36 +48,57 @@ let GLOBAL_ASSIGNMENTS: AssignedTask[] = [
   },
 ];
 
+let SERVER_ASSIGNMENTS_CACHE: AssignedTask[] = [...INITIAL_SEED_ASSIGNMENTS];
+
 export async function GET() {
   try {
-    try {
-      const supabase = await createClient();
-      const { data, error } = await supabase
-        .from('task_assignments')
-        .select('*')
-        .order('created_at', { ascending: false });
+    const supabase = await createClient();
+    const { data, error } = await supabase
+      .from('task_assignments')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-      if (data && !error && data.length > 0) {
-        const mapped = data.map((t) => ({
-          ...t,
-          assignee: REPORTING_ENGINEERS.find((e) => e.id === t.assigned_to) || {
-            id: t.assigned_to,
-            name: t.assigned_to,
-            role: 'employee',
-            pin: '1234',
-            created_at: '',
-          },
-        }));
-        return NextResponse.json({ assignments: mapped });
-      }
-    } catch {
-      // Fallback to memory store if table doesn't exist yet
+    if (data && !error && data.length > 0) {
+      const mapped: AssignedTask[] = data.map((t) => ({
+        ...t,
+        assignee: REPORTING_ENGINEERS.find((e) => e.id === t.assigned_to) || {
+          id: t.assigned_to,
+          name: t.assigned_to,
+          role: 'employee',
+          pin: '1234',
+          created_at: '',
+        },
+      }));
+      SERVER_ASSIGNMENTS_CACHE = mapped;
+      return NextResponse.json({ assignments: mapped });
     }
 
-    return NextResponse.json({ assignments: GLOBAL_ASSIGNMENTS });
+    // If Supabase table is empty or missing, seed initial assignments into Supabase
+    if (data && data.length === 0) {
+      try {
+        await supabase.from('task_assignments').insert(
+          INITIAL_SEED_ASSIGNMENTS.map((a) => ({
+            id: a.id,
+            title: a.title,
+            description: a.description,
+            assigned_to: a.assigned_to,
+            assigned_by: a.assigned_by,
+            due_date: a.due_date,
+            priority: a.priority,
+            status: a.status,
+            created_at: a.created_at,
+          }))
+        );
+        return NextResponse.json({ assignments: INITIAL_SEED_ASSIGNMENTS });
+      } catch {
+        // ignore
+      }
+    }
   } catch {
-    return NextResponse.json({ assignments: GLOBAL_ASSIGNMENTS });
+    // Fallback to server memory cache
   }
+
+  return NextResponse.json({ assignments: SERVER_ASSIGNMENTS_CACHE });
 }
 
 export async function POST(request: NextRequest) {
@@ -90,7 +111,7 @@ export async function POST(request: NextRequest) {
     }
 
     const assigneeObj = REPORTING_ENGINEERS.find((e) => e.id === assigned_to);
-    const id = `asgn-${Date.now()}`;
+    const id = body.id || `asgn-${Date.now()}`;
 
     const newTask: AssignedTask = {
       id,
@@ -105,7 +126,7 @@ export async function POST(request: NextRequest) {
       assignee: assigneeObj,
     };
 
-    // Try Supabase insert
+    // Save directly to Supabase table
     try {
       const supabase = await createClient();
       await supabase.from('task_assignments').insert({
@@ -117,13 +138,14 @@ export async function POST(request: NextRequest) {
         due_date: newTask.due_date,
         priority: newTask.priority,
         status: newTask.status,
+        created_at: newTask.created_at,
       });
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Supabase insert assignment error:', err);
     }
 
-    // Save to global memory store
-    GLOBAL_ASSIGNMENTS = [newTask, ...GLOBAL_ASSIGNMENTS];
+    // Update server cache
+    SERVER_ASSIGNMENTS_CACHE = [newTask, ...SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id)];
 
     return NextResponse.json({ assignment: newTask }, { status: 201 });
   } catch {
@@ -140,18 +162,19 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID and Status are required' }, { status: 400 });
     }
 
-    // Update in Supabase
+    // Update directly in Supabase
     try {
       const supabase = await createClient();
       await supabase.from('task_assignments').update({ status }).eq('id', id);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Supabase update assignment error:', err);
     }
 
-    // Update in memory store
-    GLOBAL_ASSIGNMENTS = GLOBAL_ASSIGNMENTS.map((a) => (a.id === id ? { ...a, status } : a));
+    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.map((a) =>
+      a.id === id ? { ...a, status } : a
+    );
 
-    const updatedTask = GLOBAL_ASSIGNMENTS.find((a) => a.id === id);
+    const updatedTask = SERVER_ASSIGNMENTS_CACHE.find((a) => a.id === id);
     return NextResponse.json({ assignment: updatedTask });
   } catch {
     return NextResponse.json({ error: 'Failed to update assignment' }, { status: 500 });
@@ -164,15 +187,15 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     const deleteAllOld = searchParams.get('deleteAllOld');
 
+    const supabase = await createClient();
+
     if (deleteAllOld === 'true') {
-      // Delete completed tasks
       try {
-        const supabase = await createClient();
         await supabase.from('task_assignments').delete().eq('status', 'Completed');
-      } catch {
-        // ignore
+      } catch (err) {
+        console.warn('Supabase delete completed assignments error:', err);
       }
-      GLOBAL_ASSIGNMENTS = GLOBAL_ASSIGNMENTS.filter((a) => a.status !== 'Completed');
+      SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.status !== 'Completed');
       return NextResponse.json({ success: true, message: 'All completed tasks deleted' });
     }
 
@@ -180,16 +203,13 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
     }
 
-    // Delete in Supabase
     try {
-      const supabase = await createClient();
       await supabase.from('task_assignments').delete().eq('id', id);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.warn('Supabase delete assignment error:', err);
     }
 
-    // Delete in memory store
-    GLOBAL_ASSIGNMENTS = GLOBAL_ASSIGNMENTS.filter((a) => a.id !== id);
+    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id);
 
     return NextResponse.json({ success: true });
   } catch {
