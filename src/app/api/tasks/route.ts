@@ -201,6 +201,7 @@ export async function GET(request: NextRequest) {
           };
           return {
             ...task,
+            work_type: task.work_type === 'Devlopment' ? 'Development' : task.work_type,
             employee: matchedEmp,
           };
         });

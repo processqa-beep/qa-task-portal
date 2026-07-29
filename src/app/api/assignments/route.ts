@@ -8,47 +8,7 @@ const REPORTING_ENGINEERS: Employee[] = [
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee' as const, pin: '1234', created_at: '' },
 ];
 
-// Seed assignments for initial setup if Supabase table is empty
-const INITIAL_SEED_ASSIGNMENTS: AssignedTask[] = [
-  {
-    id: 'asgn-1',
-    title: 'Process Audit at TL#7 Conveyor & Tempering Line',
-    description: 'Verify SOP display versions behind benteler 7, check oil leakage from conveyor motor, inspect fire hose key.',
-    assigned_to: 'QA002',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-22',
-    priority: 'High',
-    status: 'In Progress',
-    created_at: '2026-07-20T09:00:00Z',
-    assignee: REPORTING_ENGINEERS[0],
-  },
-  {
-    id: 'asgn-2',
-    title: 'SG#2 Cloud Vision Thickness Dashboard DuckDB Optimization',
-    description: 'Move Duckdb data dumping to 219 network PC and add side-by-side glass thickness comparison charts.',
-    assigned_to: 'QA004',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-21',
-    priority: 'High',
-    status: 'Completed',
-    created_at: '2026-07-19T10:30:00Z',
-    assignee: REPORTING_ENGINEERS[2],
-  },
-  {
-    id: 'asgn-3',
-    title: 'ISO DMS Compliance Verification & Documentation',
-    description: 'Verify all 9 Lexcare pending compliance items and update printable PDF standard formats across plant.',
-    assigned_to: 'QA003',
-    assigned_by: 'Chhayank Dave (QA001)',
-    due_date: '2026-07-23',
-    priority: 'Medium',
-    status: 'Assigned',
-    created_at: '2026-07-21T08:00:00Z',
-    assignee: REPORTING_ENGINEERS[1],
-  },
-];
-
-let SERVER_ASSIGNMENTS_CACHE: AssignedTask[] = [...INITIAL_SEED_ASSIGNMENTS];
+let SERVER_ASSIGNMENTS_CACHE: AssignedTask[] | null = null;
 
 export async function GET() {
   try {
@@ -58,7 +18,7 @@ export async function GET() {
       .select('*')
       .order('created_at', { ascending: false });
 
-    if (data && !error && data.length > 0) {
+    if (data && !error) {
       const mapped: AssignedTask[] = data.map((t) => ({
         ...t,
         assignee: REPORTING_ENGINEERS.find((e) => e.id === t.assigned_to) || {
@@ -72,33 +32,11 @@ export async function GET() {
       SERVER_ASSIGNMENTS_CACHE = mapped;
       return NextResponse.json({ assignments: mapped });
     }
-
-    // If Supabase table is empty or missing, seed initial assignments into Supabase
-    if (data && data.length === 0) {
-      try {
-        await supabase.from('task_assignments').insert(
-          INITIAL_SEED_ASSIGNMENTS.map((a) => ({
-            id: a.id,
-            title: a.title,
-            description: a.description,
-            assigned_to: a.assigned_to,
-            assigned_by: a.assigned_by,
-            due_date: a.due_date,
-            priority: a.priority,
-            status: a.status,
-            created_at: a.created_at,
-          }))
-        );
-        return NextResponse.json({ assignments: INITIAL_SEED_ASSIGNMENTS });
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // Fallback to server memory cache
+  } catch (err) {
+    console.warn('Supabase fetch task_assignments error:', err);
   }
 
-  return NextResponse.json({ assignments: SERVER_ASSIGNMENTS_CACHE });
+  return NextResponse.json({ assignments: SERVER_ASSIGNMENTS_CACHE || [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -144,7 +82,7 @@ export async function POST(request: NextRequest) {
       console.warn('Supabase insert assignment error:', err);
     }
 
-    // Update server cache
+    if (!SERVER_ASSIGNMENTS_CACHE) SERVER_ASSIGNMENTS_CACHE = [];
     SERVER_ASSIGNMENTS_CACHE = [newTask, ...SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id)];
 
     return NextResponse.json({ assignment: newTask }, { status: 201 });
@@ -170,12 +108,13 @@ export async function PUT(request: NextRequest) {
       console.warn('Supabase update assignment error:', err);
     }
 
-    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.map((a) =>
-      a.id === id ? { ...a, status } : a
-    );
+    if (SERVER_ASSIGNMENTS_CACHE) {
+      SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.map((a) =>
+        a.id === id ? { ...a, status } : a
+      );
+    }
 
-    const updatedTask = SERVER_ASSIGNMENTS_CACHE.find((a) => a.id === id);
-    return NextResponse.json({ assignment: updatedTask });
+    return NextResponse.json({ success: true, id, status });
   } catch {
     return NextResponse.json({ error: 'Failed to update assignment' }, { status: 500 });
   }
@@ -195,7 +134,9 @@ export async function DELETE(request: NextRequest) {
       } catch (err) {
         console.warn('Supabase delete completed assignments error:', err);
       }
-      SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.status !== 'Completed');
+      if (SERVER_ASSIGNMENTS_CACHE) {
+        SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.status !== 'Completed');
+      }
       return NextResponse.json({ success: true, message: 'All completed tasks deleted' });
     }
 
@@ -209,7 +150,9 @@ export async function DELETE(request: NextRequest) {
       console.warn('Supabase delete assignment error:', err);
     }
 
-    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id);
+    if (SERVER_ASSIGNMENTS_CACHE) {
+      SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id);
+    }
 
     return NextResponse.json({ success: true });
   } catch {

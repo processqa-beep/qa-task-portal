@@ -12,28 +12,7 @@ interface ImpactEntry {
   date: string;
 }
 
-const INITIAL_IMPACTS: ImpactEntry[] = [
-  { id:'1', taskTitle:'Kaveri 3S Customer Audit', category:'Compliance', impactLevel:'Critical',
-    description:'Completed full customer audit at Kaveri plant with zero critical deviations found.',
-    measurableResult:'100% compliance rate, 0 NCRs raised', assignee:'Hiren Dodiya', date:'2026-07-21' },
-  { id:'2', taskTitle:'DuckDB Automation Pipeline', category:'Automation', impactLevel:'High',
-    description:'Automated thickness measurement log pipeline, reducing manual reporting by 3 hours/day.',
-    measurableResult:'3 hrs/day saved, 100% data accuracy', assignee:'Mehul Chikhaliya', date:'2026-07-20' },
-  { id:'3', taskTitle:'Cloud Vision Dashboard Optimization', category:'Quality', impactLevel:'High',
-    description:'Designed comparative charts for glass width deviation tracking across Kaveri tempering line.',
-    measurableResult:'Deviation detection improved by 40%', assignee:'Mehul Chikhaliya', date:'2026-07-19' },
-  { id:'4', taskTitle:'Plant Layout & DMS Objectives', category:'Process', impactLevel:'Medium',
-    description:'Prepared comprehensive Plant Objectives Deployment matrices linked to QHSE standards.',
-    measurableResult:'12 objectives mapped, 3 plant sections covered', assignee:'Purvesh Kapadiya', date:'2026-07-18' },
-  { id:'5', taskTitle:'Anti-static Bar Bug Fix – SG#3.2', category:'Quality', impactLevel:'High',
-    description:'Resolved static anti-static bar functionality bugs in Kaveri tempering line.',
-    measurableResult:'Dust spot defects reduced by 60%', assignee:'Purvesh Kapadiya', date:'2026-07-17' },
-  { id:'6', taskTitle:'IMS Documentation Update', category:'Compliance', impactLevel:'Medium',
-    description:'Updated IMS documentation to reflect latest process changes and audit findings.',
-    measurableResult:'15 documents updated, 100% traceability', assignee:'Hiren Dodiya', date:'2026-07-16' },
-];
-
-let MEMORY_IMPACTS: ImpactEntry[] = [...INITIAL_IMPACTS];
+let SERVER_IMPACTS_CACHE: ImpactEntry[] | null = null;
 
 export async function GET() {
   try {
@@ -43,25 +22,15 @@ export async function GET() {
       .select('*')
       .order('date', { ascending: false });
 
-    if (data && !error && data.length > 0) {
-      MEMORY_IMPACTS = data;
+    if (data && !error) {
+      SERVER_IMPACTS_CACHE = data;
       return NextResponse.json({ impacts: data });
-    }
-
-    if (data && data.length === 0) {
-      // Seed initial entries into Supabase table
-      try {
-        await supabase.from('ceo_impacts').insert(INITIAL_IMPACTS);
-        return NextResponse.json({ impacts: INITIAL_IMPACTS });
-      } catch {
-        // ignore
-      }
     }
   } catch (err) {
     console.warn('Supabase fetch ceo_impacts error:', err);
   }
 
-  return NextResponse.json({ impacts: MEMORY_IMPACTS });
+  return NextResponse.json({ impacts: SERVER_IMPACTS_CACHE || [] });
 }
 
 export async function POST(request: NextRequest) {
@@ -91,7 +60,9 @@ export async function POST(request: NextRequest) {
       console.warn('Supabase insert ceo_impact error:', err);
     }
 
-    MEMORY_IMPACTS = [newEntry, ...MEMORY_IMPACTS.filter((i) => i.id !== newEntry.id)];
+    if (!SERVER_IMPACTS_CACHE) SERVER_IMPACTS_CACHE = [];
+    SERVER_IMPACTS_CACHE = [newEntry, ...SERVER_IMPACTS_CACHE.filter((i) => i.id !== newEntry.id)];
+
     return NextResponse.json({ impact: newEntry }, { status: 201 });
   } catch {
     return NextResponse.json({ error: 'Failed to create entry' }, { status: 500 });
@@ -114,7 +85,10 @@ export async function DELETE(request: NextRequest) {
       console.warn('Supabase delete ceo_impact error:', err);
     }
 
-    MEMORY_IMPACTS = MEMORY_IMPACTS.filter((i) => i.id !== id);
+    if (SERVER_IMPACTS_CACHE) {
+      SERVER_IMPACTS_CACHE = SERVER_IMPACTS_CACHE.filter((i) => i.id !== id);
+    }
+
     return NextResponse.json({ success: true });
   } catch {
     return NextResponse.json({ error: 'Failed to delete entry' }, { status: 500 });

@@ -11,14 +11,14 @@ export const WORK_TYPES: WorkType[] = [
   'Data Analysis',
   'IMS',
   'Process Audit',
-  'Devlopment',
+  'Development',
   'Additional',
   'Other',
 ];
 
 export const TASK_STATUSES: TaskStatus[] = ['Completed', 'Pending'];
 
-export const WORK_TYPE_COLORS: Record<WorkType, string> = {
+export const WORK_TYPE_COLORS: Record<string, string> = {
   'Testing': 'hsl(210, 100%, 56%)',
   'Regression': 'hsl(280, 80%, 55%)',
   'Automation': 'hsl(150, 70%, 45%)',
@@ -29,7 +29,8 @@ export const WORK_TYPE_COLORS: Record<WorkType, string> = {
   'Data Analysis': 'hsl(180, 75%, 45%)',
   'IMS': 'hsl(320, 70%, 55%)',
   'Process Audit': 'hsl(35, 90%, 50%)',
-  'Devlopment': 'hsl(140, 65%, 45%)',
+  'Development': 'hsl(245, 75%, 60%)',
+  'Devlopment': 'hsl(245, 75%, 60%)',
   'Additional': 'hsl(230, 75%, 60%)',
   'Other': 'hsl(220, 15%, 55%)',
 };

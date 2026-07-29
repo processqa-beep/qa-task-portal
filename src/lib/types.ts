@@ -31,7 +31,7 @@ export type WorkType =
   | 'Data Analysis'
   | 'IMS'
   | 'Process Audit'
-  | 'Devlopment'
+  | 'Development'
   | 'Additional'
   | 'Other';
 
