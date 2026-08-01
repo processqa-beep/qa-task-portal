@@ -65,38 +65,6 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
         })
         .catch(() => {});
     }
-
-    const now = new Date();
-    const currentHour = now.getHours();
-    const dayOfWeek = now.getDay(); // 0 = Sun, 6 = Sat
-
-    // 1. Auto 5 PM reminder check on Mon-Fri for unsubmitted QA members
-    if (currentHour >= 17 && dayOfWeek !== 0 && dayOfWeek !== 6) {
-      fetch('/api/cron/reminder-chat')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            toast.info('5 PM QA Report Reminder Sent to Google Chat', {
-              description: data.message,
-            });
-          }
-        })
-        .catch(() => {});
-    }
-
-    // 2. Auto 7 PM summary post check
-    if (currentHour >= 19) {
-      fetch('/api/cron/auto-post-chat')
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            toast.info('Auto 7 PM Summary Card Posted to Google Chat', {
-              description: data.message,
-            });
-          }
-        })
-        .catch(() => {});
-    }
   }, []);
 
   if (isLoading) {
