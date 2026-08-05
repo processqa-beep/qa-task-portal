@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { sendCardToGoogleChat, hasDateBeenPosted, markDateAsPosted, getSavedWebhookUrl } from '@/app/api/google-chat/route';
+import { sendCardToGoogleChat, hasDateBeenPosted, markDateAsPosted, getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
 import { DailyTask } from '@/lib/types';
-import { toStandardDateStr } from '@/lib/utils';
 
 const ID_NAME_MAP: Record<string, string> = {
   QA001: 'Chhayank Dave',
@@ -15,9 +14,13 @@ const ID_NAME_MAP: Record<string, string> = {
   'Mehul Chikhaliya': 'QA004',
 };
 
+function getISTDateStr(date: Date = new Date()): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
 export async function GET(request: NextRequest) {
   try {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getISTDateStr(new Date());
     const { searchParams } = new URL(request.url);
     const force = searchParams.get('force') === 'true';
 
@@ -87,7 +90,7 @@ export async function GET(request: NextRequest) {
       memberTasksMap.get(key)!.tasks.push(t);
     });
 
-    const webhookUrl = getSavedWebhookUrl();
+    const webhookUrl = await getSavedWebhookUrlAsync();
 
     let postedCount = 0;
     let errors: string[] = [];

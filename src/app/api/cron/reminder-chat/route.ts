@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { getSavedWebhookUrl } from '@/app/api/google-chat/route';
+import { getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
 import { DailyTask, Employee } from '@/lib/types';
-import { toStandardDateStr } from '@/lib/utils';
 
 const REPORTING_QA_ENGINEERS: Employee[] = [
   { id: 'QA002', name: 'Hiren Dodiya', role: 'employee', pin: '1234', created_at: '' },
@@ -10,27 +9,35 @@ const REPORTING_QA_ENGINEERS: Employee[] = [
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee', pin: '1234', created_at: '' },
 ];
 
-// Track if 5 PM reminder was sent today to prevent duplicate notifications
 const REMINDER_SENT_DATES = new Set<string>();
+
+function getISTDateStr(date: Date = new Date()): string {
+  // Returns YYYY-MM-DD in India Standard Time
+  return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
 
 export async function GET(request: NextRequest) {
   try {
     const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 6 = Saturday
-    const todayStr = toStandardDateStr(now);
+    // Evaluate day of week in Asia/Kolkata timezone
+    const istDayStr = now.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Kolkata' });
+    const isWeekend = istDayStr === 'Sat' || istDayStr === 'Sun';
+
+    const todayStr = getISTDateStr(now);
     const { searchParams } = new URL(request.url);
     const force = searchParams.get('force') === 'true';
 
-    // 1. Disable reminders on Saturday (6) and Sunday (0)
-    if ((dayOfWeek === 0 || dayOfWeek === 6) && !force) {
+    // 1. Disable reminders on Saturday and Sunday (unless forced for testing)
+    if (isWeekend && !force) {
       return NextResponse.json({
         status: 'weekend_disabled',
         message: 'Daily task reminders are disabled on Saturday and Sunday.',
         date: todayStr,
+        dayOfWeek: istDayStr,
       });
     }
 
-    // 2. Prevent sending duplicate 5 PM reminders on the same date
+    // 2. Prevent duplicate reminders on the same calendar day (unless forced)
     if (REMINDER_SENT_DATES.has(todayStr) && !force) {
       return NextResponse.json({
         status: 'already_sent_today',
@@ -63,7 +70,7 @@ export async function GET(request: NextRequest) {
       );
     });
 
-    if (pendingMembers.length === 0) {
+    if (pendingMembers.length === 0 && !force) {
       return NextResponse.json({
         status: 'all_submitted',
         message: `All QA members have already submitted their daily task reports for ${todayStr}. No reminder needed.`,
@@ -71,11 +78,10 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 5. Build reminder card payload for Google Chat
-    const targetWebhookUrl =
-      getSavedWebhookUrl() ||
-      process.env.GOOGLE_CHAT_WEBHOOK_URL ||
-      process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL;
+    const membersToRemind = pendingMembers.length > 0 ? pendingMembers : REPORTING_QA_ENGINEERS;
+
+    // 5. Retrieve active Webhook URL from Supabase / memory / env
+    const targetWebhookUrl = await getSavedWebhookUrlAsync();
 
     if (!targetWebhookUrl) {
       return NextResponse.json(
@@ -91,7 +97,7 @@ export async function GET(request: NextRequest) {
       year: 'numeric',
     });
 
-    const pendingListText = pendingMembers
+    const pendingListText = membersToRemind
       .map((m, idx) => `<b>${idx + 1}.</b> ${m.name} (${m.id})`)
       .join('<br>');
 
@@ -111,7 +117,7 @@ export async function GET(request: NextRequest) {
                 widgets: [
                   {
                     textParagraph: {
-                      text: `<b>Good Evening QA Team! 👋</b><br><br>This is a friendly 5:00 PM reminder to update your daily activity report on the QA Task Portal.<br><br><font color="#dc2626"><b>Pending Submissions (${pendingMembers.length}):</b></font><br>${pendingListText}`,
+                      text: `<b>Good Evening QA Team! 👋</b><br><br>This is a friendly 5:00 PM reminder to update your daily activity report on the QA Task Portal.<br><br><font color="#dc2626"><b>Pending Submissions (${membersToRemind.length}):</b></font><br>${pendingListText}`,
                     },
                   },
                   {
@@ -140,9 +146,9 @@ export async function GET(request: NextRequest) {
       REMINDER_SENT_DATES.add(todayStr);
       return NextResponse.json({
         success: true,
-        pendingCount: pendingMembers.length,
-        pendingMembers: pendingMembers.map((m) => m.name),
-        message: `Sent 5 PM reminder to Google Chat for ${pendingMembers.length} QA member(s).`,
+        pendingCount: membersToRemind.length,
+        pendingMembers: membersToRemind.map((m) => m.name),
+        message: `Sent 5 PM reminder to Google Chat for ${membersToRemind.length} QA member(s).`,
         date: todayStr,
       });
     } else {

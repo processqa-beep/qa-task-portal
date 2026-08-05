@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 
 interface TaskItem {
   work_type: string;
@@ -38,13 +39,49 @@ let SAVED_SERVER_WEBHOOK = process.env.GOOGLE_CHAT_WEBHOOK_URL || process.env.NE
 // Log of dates posted to prevent double-posting on auto 7 PM trigger
 const POSTED_DATES_LOG = new Set<string>();
 
+export async function getSavedWebhookUrlAsync(): Promise<string> {
+  if (SAVED_SERVER_WEBHOOK && SAVED_SERVER_WEBHOOK.trim().startsWith('http')) {
+    return SAVED_SERVER_WEBHOOK.trim();
+  }
+
+  // Fetch from Supabase system_settings table if available
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('key', 'google_chat_webhook')
+      .single();
+
+    if (data && data.value && String(data.value).trim().startsWith('http')) {
+      SAVED_SERVER_WEBHOOK = String(data.value).trim();
+      return SAVED_SERVER_WEBHOOK;
+    }
+  } catch {
+    // ignore
+  }
+
+  return process.env.GOOGLE_CHAT_WEBHOOK_URL || process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL || '';
+}
+
 export function getSavedWebhookUrl(): string {
   return SAVED_SERVER_WEBHOOK;
 }
 
-export function setSavedWebhookUrl(url: string) {
-  if (url && url.trim().startsWith('http')) {
-    SAVED_SERVER_WEBHOOK = url.trim();
+export async function saveWebhookUrlToDatabase(url: string) {
+  if (!url || !url.trim().startsWith('http')) return;
+  const cleanUrl = url.trim();
+  SAVED_SERVER_WEBHOOK = cleanUrl;
+
+  try {
+    const supabase = await createClient();
+    await supabase.from('system_settings').upsert({
+      key: 'google_chat_webhook',
+      value: cleanUrl,
+      updated_at: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('Supabase save google_chat_webhook error:', err);
   }
 }
 
@@ -76,12 +113,13 @@ export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ su
   const { webhookUrl, employeeName, employeeId, date, tasks } = body;
 
   if (webhookUrl && webhookUrl.trim().startsWith('http')) {
-    setSavedWebhookUrl(webhookUrl);
+    await saveWebhookUrlToDatabase(webhookUrl.trim());
   }
 
+  const activeWebhook = await getSavedWebhookUrlAsync();
   const targetWebhookUrl =
     (webhookUrl && webhookUrl.trim().startsWith('http') ? webhookUrl.trim() : '') ||
-    SAVED_SERVER_WEBHOOK ||
+    activeWebhook ||
     process.env.GOOGLE_CHAT_WEBHOOK_URL ||
     process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL;
 
@@ -154,8 +192,9 @@ export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ su
 }
 
 export async function GET() {
+  const activeWebhook = await getSavedWebhookUrlAsync();
   return NextResponse.json({
-    webhookUrl: SAVED_SERVER_WEBHOOK,
+    webhookUrl: activeWebhook,
     postedDates: Array.from(POSTED_DATES_LOG),
   });
 }
@@ -163,6 +202,11 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const body: NotificationBody = await request.json();
+
+    if (body.webhookUrl && body.webhookUrl.trim().startsWith('http')) {
+      await saveWebhookUrlToDatabase(body.webhookUrl.trim());
+    }
+
     const result = await sendCardToGoogleChat(body);
 
     if (result.success) {
