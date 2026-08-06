@@ -167,14 +167,12 @@ export default function DashboardPage() {
         isLoading={isLoading}
       />
 
-      {/* Full-Width Row 1: Today / Selected Date Summary */}
+      {/* Full-Width Row 1: Today Report Summary */}
       <TodayTask
         task={todayTask}
         tasks={tasks}
         employees={employees}
         isLoading={isLoading}
-        selectedDate={selectedDateFilter}
-        onDateChange={setSelectedDateFilter}
       />
 
       {/* Full-Width Row 2: Recent QA Activity Log Table */}

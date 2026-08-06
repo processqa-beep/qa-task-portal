@@ -39,26 +39,15 @@ interface TodayTaskProps {
   tasks?: DailyTask[];
   employees?: Employee[];
   isLoading: boolean;
-  selectedDate?: string;
-  onDateChange?: (date: string) => void;
 }
 
-export function TodayTask({ task, tasks = [], employees = [], isLoading, selectedDate, onDateChange }: TodayTaskProps) {
+export function TodayTask({ task, tasks = [], employees = [], isLoading }: TodayTaskProps) {
   const todayStr = new Date().toISOString().split('T')[0];
   const [isPostingToChat, setIsPostingToChat] = useState(false);
   const [openChatModal, setOpenChatModal] = useState(false);
-  const [postDate, setPostDate] = useState<string>(selectedDate || todayStr);
+  const [postDate, setPostDate] = useState<string>(todayStr);
   const [postMemberId, setPostMemberId] = useState<string>('ALL');
   const [webhookUrlInput, setWebhookUrlInput] = useState<string>('');
-  const [internalViewDate, setInternalViewDate] = useState<string>(selectedDate || todayStr);
-  const [viewMemberId, setViewMemberId] = useState<string>('ALL');
-
-  const activeViewDate = selectedDate !== undefined ? selectedDate : internalViewDate;
-
-  const handleDateSelect = (newDate: string) => {
-    setInternalViewDate(newDate);
-    onDateChange?.(newDate);
-  };
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : '';
@@ -88,12 +77,10 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading, selecte
     );
   }
 
-  const selectedDateTasks = tasks.filter(t => !activeViewDate || toStandardDateStr(t.date) === toStandardDateStr(activeViewDate));
+  const todayTasks = tasks.filter(t => toStandardDateStr(t.date || t.created_at) === todayStr);
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
-  const filteredReportingMembers = reportingMembers.filter(e => viewMemberId === 'ALL' || e.id === viewMemberId);
-
-  // Build flat list: for each selected member, show all their tasks for selectedDate
+  // Build flat list: for each reporting member, show all their today tasks (or one "not submitted" row)
   const rows: {
     srNo: number;
     empName: string;
@@ -106,13 +93,13 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading, selecte
   }[] = [];
 
   let sr = 1;
-  filteredReportingMembers.forEach((emp) => {
-    const empDateTasks = selectedDateTasks.filter(
+  reportingMembers.forEach((emp) => {
+    const empTodayTasks = todayTasks.filter(
       (t) => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
     );
 
-    if (empDateTasks.length > 0) {
-      empDateTasks.forEach((t) => {
+    if (empTodayTasks.length > 0) {
+      empTodayTasks.forEach((t) => {
         rows.push({
           srNo: sr++,
           empName: emp.name,
@@ -139,7 +126,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading, selecte
   });
 
   const submittedCount = reportingMembers.filter(emp =>
-    selectedDateTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
+    todayTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
   ).length;
 
   const handleExecutePostToChat = async () => {
@@ -269,59 +256,26 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading, selecte
       <div className="h-1 shimmer-bg" />
 
       {/* Header */}
-      <div className="px-5 pt-5 pb-3 flex items-center justify-between flex-wrap gap-3">
+      <div className="px-5 pt-5 pb-4 flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Calendar className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h3 className="text-base font-bold tracking-tight">Daily Task Activity Summary</h3>
+            <h3 className="text-base font-bold tracking-tight">Today&apos;s Report Summary</h3>
             <p className="text-[11px] text-muted-foreground font-medium">
-              {formatDate(activeViewDate || todayStr, 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
+              {formatDate(new Date(), 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {/* QA Member Filter */}
-          <Select value={viewMemberId} onValueChange={(v) => v && setViewMemberId(v)}>
-            <SelectTrigger className="h-9 text-xs w-[160px] rounded-xl border-border/30 font-semibold bg-background/60">
-              <SelectValue placeholder="QA Member" />
-            </SelectTrigger>
-            <SelectContent className="glass-card border-border/30">
-              <SelectItem value="ALL">All QA Members</SelectItem>
-              <SelectItem value="QA002">Hiren Dodiya (QA002)</SelectItem>
-              <SelectItem value="QA003">Purvesh Kapadiya (QA003)</SelectItem>
-              <SelectItem value="QA004">Mehul Chikhaliya (QA004)</SelectItem>
-            </SelectContent>
-          </Select>
-
-          {/* Date Filter */}
-          <div className="flex items-center gap-1">
-            <Input
-              type="date"
-              value={activeViewDate}
-              onChange={(e) => handleDateSelect(e.target.value)}
-              className="h-9 text-xs w-[140px] rounded-xl border-border/30 bg-background/60 font-medium"
-            />
-            {activeViewDate !== todayStr && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => handleDateSelect('')}
-                className="h-9 px-2 text-[10px] font-bold text-muted-foreground hover:text-foreground"
-              >
-                All Dates
-              </Button>
-            )}
-          </div>
-
+        <div className="flex items-center gap-2">
           <Button
             size="sm"
             variant="outline"
             onClick={() => {
-              setPostDate(activeViewDate || todayStr);
-              setPostMemberId(viewMemberId);
+              setPostDate(todayStr);
+              setPostMemberId('ALL');
               setOpenChatModal(true);
             }}
             className="text-xs h-9 rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-bold"
