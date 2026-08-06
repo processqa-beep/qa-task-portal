@@ -51,7 +51,7 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
       }
 
       // Attach employee metadata to each task
-      const fullTasks: DailyTask[] = rawTasks.map((t) => {
+      const fullTasks: DailyTask[] = rawTasks.map((t: any) => {
         const emp = empList.find(e => e.id === t.employee_id || e.name === t.employee_id) || {
           id: ID_NAME_MAP[t.employee_id] || t.employee_id,
           name: t.employee_id,
