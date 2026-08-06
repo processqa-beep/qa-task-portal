@@ -42,11 +42,14 @@ interface TodayTaskProps {
 }
 
 export function TodayTask({ task, tasks = [], employees = [], isLoading }: TodayTaskProps) {
+  const todayStr = new Date().toISOString().split('T')[0];
   const [isPostingToChat, setIsPostingToChat] = useState(false);
   const [openChatModal, setOpenChatModal] = useState(false);
-  const [postDate, setPostDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [postDate, setPostDate] = useState<string>(todayStr);
   const [postMemberId, setPostMemberId] = useState<string>('ALL');
   const [webhookUrlInput, setWebhookUrlInput] = useState<string>('');
+  const [viewDate, setViewDate] = useState<string>(todayStr);
+  const [viewMemberId, setViewMemberId] = useState<string>('ALL');
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : '';
@@ -75,10 +78,6 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
       </div>
     );
   }
-
-  const todayStr = new Date().toISOString().split('T')[0];
-  const [viewDate, setViewDate] = useState<string>(new Date().toISOString().split('T')[0]);
-  const [viewMemberId, setViewMemberId] = useState<string>('ALL');
 
   const selectedDateTasks = tasks.filter(t => toStandardDateStr(t.date) === toStandardDateStr(viewDate));
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
