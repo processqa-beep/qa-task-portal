@@ -16,12 +16,28 @@ interface VersionInfo {
 
 const VERSIONS: VersionInfo[] = [
   {
-    version: 'v2.4.0',
-    date: 'July 29, 2026',
+    version: 'v2.5.0',
+    date: 'August 6, 2026',
     badge: 'Latest Release',
     badgeColor: 'bg-primary/10 text-primary border-primary/20 font-bold',
     icon: Sparkles,
     iconColor: 'bg-primary/10 text-primary border-primary/20',
+    title: 'Global Date Filter Analytics, Impact Review Form Linkage & SSR Stability',
+    changes: [
+      'Built Global Date Selector on Dashboard allowing users to pick any specific date or date range to update all KPI cards, 6 visual charts, leaderboards, and report tables in real time.',
+      'Added "Impactful Activity" toggle in Task Submission Form (TaskForm) with expanded category, level, and measurable result fields that auto-save directly to the Impact Review dashboard.',
+      'Added QA Member dropdown and Date Picker filter controls across Task History (TaskTable) and Daily Activity Summary (TodayTask) tables.',
+      'Configured Supabase system_settings database persistence for Google Chat Webhook URLs to ensure 100% reliable 5:00 PM IST weekday reminders and 7:00 PM IST daily summary posts.',
+      'Fixed React Hooks ordering rules and Supabase client singleton initialization for seamless Next.js SSR hydration stability.',
+    ],
+  },
+  {
+    version: 'v2.4.0',
+    date: 'July 29, 2026',
+    badge: 'Stable',
+    badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-bold',
+    icon: Shield,
+    iconColor: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
     title: 'Supabase Real-time Sync, 5 PM QA Reminders & Work Type Consolidation',
     changes: [
       'Connected Task Assignments and CEO Review impact entries directly to Supabase backend API routes for 100% cross-device data synchronization.',
