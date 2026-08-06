@@ -382,7 +382,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
             .eq('date', selectedDate);
 
           if (existingTasks && existingTasks.length > 0) {
-            todayTasksList = existingTasks.map(t => ({
+            todayTasksList = existingTasks.map((t: any) => ({
               work_type: t.work_type,
               task_performed: t.task_performed,
               status: t.status,
