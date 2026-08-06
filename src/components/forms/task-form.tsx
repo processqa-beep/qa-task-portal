@@ -73,8 +73,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const supabaseRef = useRef(createClient());
-  const supabase = supabaseRef.current;
+  const getSupabase = () => createClient();
 
   // Load dynamic work types & default Webhook URL from Supabase APIs for all devices
   useEffect(() => {
@@ -170,7 +169,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
 
       // 1. Try Supabase query
       try {
-        const { data: existingTasks } = await supabase
+        const { data: existingTasks } = await getSupabase()
           .from('daily_tasks')
           .select('work_type, task_performed, status, remarks')
           .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)
@@ -313,7 +312,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
       // 1. Save Task to Supabase or API fallback
       let insertSuccess = false;
       try {
-        const { error } = await supabase.from('daily_tasks').insert({
+        const { error } = await getSupabase().from('daily_tasks').insert({
           employee_id: empId,
           date: selectedDate,
           work_type: formData.work_type,
@@ -376,7 +375,7 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
         ];
 
         try {
-          const { data: existingTasks } = await supabase
+          const { data: existingTasks } = await getSupabase()
             .from('daily_tasks')
             .select('work_type, task_performed, status, remarks')
             .or(`employee_id.eq.${empId},employee_id.eq.${empName}`)

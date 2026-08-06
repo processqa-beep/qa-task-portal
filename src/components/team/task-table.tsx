@@ -73,8 +73,7 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const supabaseRef = useRef(createClient());
-  const supabase = supabaseRef.current;
+  const getSupabase = () => createClient();
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -132,7 +131,7 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
     try {
       // 1. Direct browser delete in Supabase
       try {
-        await supabase.from('daily_tasks').delete().eq('id', id);
+        await getSupabase().from('daily_tasks').delete().eq('id', id);
       } catch {
         // ignore
       }

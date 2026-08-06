@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { DailyTask, Employee } from '@/lib/types';
 
@@ -24,11 +24,9 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
   const [employees, setEmployees] = useState<Employee[]>(globalEmployeesCache);
   const [isLoading, setIsLoading] = useState(globalTasksCache.length === 0);
 
-  const supabaseRef = useRef(createClient());
-  const supabase = supabaseRef.current;
-
   const loadData = useCallback(async () => {
     try {
+      const supabase = createClient();
       // 1. Fetch direct from Supabase in browser for max speed
       const [empRes, tasksRes] = await Promise.all([
         supabase.from('employees').select('*').order('id'),
@@ -77,12 +75,14 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
     } finally {
       setIsLoading(false);
     }
-  }, [userEmployeeId, isLeader, supabase]);
+  }, [userEmployeeId, isLeader]);
 
   useEffect(() => {
     loadData();
 
-    // Unique channel per hook instance to prevent duplicate channel name crashes
+    if (typeof window === 'undefined') return;
+
+    const supabase = createClient();
     const instanceId = Math.random().toString(36).substring(2, 7);
 
     let tasksChannel: any = null;
@@ -114,7 +114,7 @@ export function useRealtimeData(userEmployeeId?: string, isLeader?: boolean) {
         // ignore
       }
     };
-  }, [loadData, supabase]);
+  }, [loadData]);
 
   return { tasks, employees, isLoading, refresh: loadData };
 }
