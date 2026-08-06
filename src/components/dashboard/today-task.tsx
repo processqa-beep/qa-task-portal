@@ -39,17 +39,26 @@ interface TodayTaskProps {
   tasks?: DailyTask[];
   employees?: Employee[];
   isLoading: boolean;
+  selectedDate?: string;
+  onDateChange?: (date: string) => void;
 }
 
-export function TodayTask({ task, tasks = [], employees = [], isLoading }: TodayTaskProps) {
+export function TodayTask({ task, tasks = [], employees = [], isLoading, selectedDate, onDateChange }: TodayTaskProps) {
   const todayStr = new Date().toISOString().split('T')[0];
   const [isPostingToChat, setIsPostingToChat] = useState(false);
   const [openChatModal, setOpenChatModal] = useState(false);
-  const [postDate, setPostDate] = useState<string>(todayStr);
+  const [postDate, setPostDate] = useState<string>(selectedDate || todayStr);
   const [postMemberId, setPostMemberId] = useState<string>('ALL');
   const [webhookUrlInput, setWebhookUrlInput] = useState<string>('');
-  const [viewDate, setViewDate] = useState<string>(todayStr);
+  const [internalViewDate, setInternalViewDate] = useState<string>(selectedDate || todayStr);
   const [viewMemberId, setViewMemberId] = useState<string>('ALL');
+
+  const activeViewDate = selectedDate !== undefined ? selectedDate : internalViewDate;
+
+  const handleDateSelect = (newDate: string) => {
+    setInternalViewDate(newDate);
+    onDateChange?.(newDate);
+  };
 
   useEffect(() => {
     const saved = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') : '';
@@ -79,7 +88,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
     );
   }
 
-  const selectedDateTasks = tasks.filter(t => toStandardDateStr(t.date) === toStandardDateStr(viewDate));
+  const selectedDateTasks = tasks.filter(t => !activeViewDate || toStandardDateStr(t.date) === toStandardDateStr(activeViewDate));
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
   const filteredReportingMembers = reportingMembers.filter(e => viewMemberId === 'ALL' || e.id === viewMemberId);
@@ -268,7 +277,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           <div>
             <h3 className="text-base font-bold tracking-tight">Daily Task Activity Summary</h3>
             <p className="text-[11px] text-muted-foreground font-medium">
-              {formatDate(viewDate, 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
+              {formatDate(activeViewDate || todayStr, 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
             </p>
           </div>
         </div>
@@ -291,18 +300,18 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
           <div className="flex items-center gap-1">
             <Input
               type="date"
-              value={viewDate}
-              onChange={(e) => setViewDate(e.target.value)}
+              value={activeViewDate}
+              onChange={(e) => handleDateSelect(e.target.value)}
               className="h-9 text-xs w-[140px] rounded-xl border-border/30 bg-background/60 font-medium"
             />
-            {viewDate !== todayStr && (
+            {activeViewDate !== todayStr && (
               <Button
                 size="sm"
                 variant="ghost"
-                onClick={() => setViewDate(todayStr)}
+                onClick={() => handleDateSelect('')}
                 className="h-9 px-2 text-[10px] font-bold text-muted-foreground hover:text-foreground"
               >
-                Today
+                All Dates
               </Button>
             )}
           </div>
@@ -311,7 +320,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
             size="sm"
             variant="outline"
             onClick={() => {
-              setPostDate(viewDate);
+              setPostDate(activeViewDate || todayStr);
               setPostMemberId(viewMemberId);
               setOpenChatModal(true);
             }}
