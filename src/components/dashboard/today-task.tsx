@@ -77,10 +77,15 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const todayTasks = tasks.filter(t => toStandardDateStr(t.date) === todayStr);
+  const [viewDate, setViewDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [viewMemberId, setViewMemberId] = useState<string>('ALL');
+
+  const selectedDateTasks = tasks.filter(t => toStandardDateStr(t.date) === toStandardDateStr(viewDate));
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
-  // Build a flat list: for each member, show all their today tasks (or one "not submitted" row)
+  const filteredReportingMembers = reportingMembers.filter(e => viewMemberId === 'ALL' || e.id === viewMemberId);
+
+  // Build flat list: for each selected member, show all their tasks for selectedDate
   const rows: {
     srNo: number;
     empName: string;
@@ -93,13 +98,13 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   }[] = [];
 
   let sr = 1;
-  reportingMembers.forEach((emp) => {
-    const empTodayTasks = todayTasks.filter(
+  filteredReportingMembers.forEach((emp) => {
+    const empDateTasks = selectedDateTasks.filter(
       (t) => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
     );
 
-    if (empTodayTasks.length > 0) {
-      empTodayTasks.forEach((t) => {
+    if (empDateTasks.length > 0) {
+      empDateTasks.forEach((t) => {
         rows.push({
           srNo: sr++,
           empName: emp.name,
@@ -126,7 +131,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
   });
 
   const submittedCount = reportingMembers.filter(emp =>
-    todayTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
+    selectedDateTasks.some(t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name)
   ).length;
 
   const handleExecutePostToChat = async () => {
@@ -256,24 +261,61 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
       <div className="h-1 shimmer-bg" />
 
       {/* Header */}
-      <div className="px-5 pt-5 pb-4 flex items-center justify-between flex-wrap gap-2">
+      <div className="px-5 pt-5 pb-3 flex items-center justify-between flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center">
             <Calendar className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h3 className="text-base font-bold tracking-tight">Today&apos;s Report Summary</h3>
+            <h3 className="text-base font-bold tracking-tight">Daily Task Activity Summary</h3>
             <p className="text-[11px] text-muted-foreground font-medium">
-              {formatDate(new Date(), 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
+              {formatDate(viewDate, 'EEEE, MMMM dd, yyyy')} · <span className="text-primary font-bold">{submittedCount}/{reportingMembers.length}</span> submitted
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* QA Member Filter */}
+          <Select value={viewMemberId} onValueChange={(v) => v && setViewMemberId(v)}>
+            <SelectTrigger className="h-9 text-xs w-[160px] rounded-xl border-border/30 font-semibold bg-background/60">
+              <SelectValue placeholder="QA Member" />
+            </SelectTrigger>
+            <SelectContent className="glass-card border-border/30">
+              <SelectItem value="ALL">All QA Members</SelectItem>
+              <SelectItem value="QA002">Hiren Dodiya (QA002)</SelectItem>
+              <SelectItem value="QA003">Purvesh Kapadiya (QA003)</SelectItem>
+              <SelectItem value="QA004">Mehul Chikhaliya (QA004)</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {/* Date Filter */}
+          <div className="flex items-center gap-1">
+            <Input
+              type="date"
+              value={viewDate}
+              onChange={(e) => setViewDate(e.target.value)}
+              className="h-9 text-xs w-[140px] rounded-xl border-border/30 bg-background/60 font-medium"
+            />
+            {viewDate !== todayStr && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setViewDate(todayStr)}
+                className="h-9 px-2 text-[10px] font-bold text-muted-foreground hover:text-foreground"
+              >
+                Today
+              </Button>
+            )}
+          </div>
+
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setOpenChatModal(true)}
+            onClick={() => {
+              setPostDate(viewDate);
+              setPostMemberId(viewMemberId);
+              setOpenChatModal(true);
+            }}
             className="text-xs h-9 rounded-xl border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-bold"
           >
             <MessageSquare className="h-3.5 w-3.5 mr-1.5 text-emerald-500" />

@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, CheckSquare } from 'lucide-react';
+import { Loader2, Save, Send, CheckCircle2, PlusCircle, FileText, MessageSquare, CheckSquare, Sparkles } from 'lucide-react';
 import { WORK_TYPES, TASK_STATUSES, DRAFT_STORAGE_KEY } from '@/lib/constants';
 import { TaskFormData, DailyTask } from '@/lib/types';
 import { formatDate, getToday, toStandardDateStr } from '@/lib/utils';
@@ -63,6 +63,13 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
     status: 'Completed',
     remarks: '',
   });
+
+  // Impact Review integration state
+  const [isImpactful, setIsImpactful] = useState(false);
+  const [impactCategory, setImpactCategory] = useState<string>('Quality');
+  const [impactLevel, setImpactLevel] = useState<string>('High');
+  const [measurableResult, setMeasurableResult] = useState('');
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -332,6 +339,28 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
         if (!res.ok) {
           const data = await res.json();
           throw new Error(data.error || 'Failed to submit task');
+        }
+      }
+
+      // 2. If marked as Impactful Activity, automatically save to Impact Review tab (/api/ceo-review)
+      if (isImpactful) {
+        try {
+          await fetch('/api/ceo-review', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              taskTitle: `${formData.work_type} – ${formData.task_performed.slice(0, 45)}`,
+              category: impactCategory,
+              impactLevel: impactLevel,
+              description: formData.task_performed.trim(),
+              measurableResult: measurableResult.trim() || 'High quality impact delivered',
+              assignee: empName,
+              date: selectedDate,
+            }),
+          });
+          toast.success('Task saved & posted to Impact Review tab!');
+        } catch {
+          console.warn('Failed to save entry to Impact Review');
         }
       }
 
@@ -674,6 +703,70 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
               rows={2}
               className="resize-none rounded-xl border-border/30 bg-background/60 font-medium"
             />
+          </div>
+
+          {/* Impact Review Checkbox & Fields */}
+          <div className="space-y-3 p-4 rounded-xl bg-violet-500/[0.05] border border-violet-500/20">
+            <label htmlFor="is_impactful_checkbox" className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                id="is_impactful_checkbox"
+                checked={isImpactful}
+                onChange={(e) => setIsImpactful(e.target.checked)}
+                className="h-4 w-4 rounded text-violet-600 focus:ring-violet-500 accent-violet-600 cursor-pointer shrink-0"
+              />
+              <div className="space-y-0.5">
+                <p className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                  Is this an Impactful Activity for CEO / Leadership Review?
+                </p>
+                <p className="text-[10px] text-muted-foreground font-medium">
+                  If checked, this activity will automatically post to the executive Impact Review dashboard and visual charts.
+                </p>
+              </div>
+            </label>
+
+            {isImpactful && (
+              <div className="pt-2 border-t border-violet-500/15 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold text-muted-foreground">Impact Category *</Label>
+                  <Select value={impactCategory} onValueChange={(v) => v && setImpactCategory(v)}>
+                    <SelectTrigger className="h-9 text-xs rounded-xl border-border/30 bg-background/80 font-medium">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="glass-card border-border/30">
+                      {['Quality', 'Compliance', 'Automation', 'Process', 'Cost Saving', 'Customer', 'Safety'].map((c) => (
+                        <SelectItem key={c} value={c}>{c}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold text-muted-foreground">Impact Level *</Label>
+                  <Select value={impactLevel} onValueChange={(v) => v && setImpactLevel(v)}>
+                    <SelectTrigger className="h-9 text-xs rounded-xl border-border/30 bg-background/80 font-medium">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="glass-card border-border/30">
+                      {['Critical', 'High', 'Medium', 'Low'].map((l) => (
+                        <SelectItem key={l} value={l}>{l}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="sm:col-span-2 space-y-1">
+                  <Label className="text-[11px] font-semibold text-muted-foreground">Measurable Result / Outcome</Label>
+                  <Input
+                    placeholder="e.g. 40% defect reduction, 3 hrs saved daily, 0 NCRs raised..."
+                    value={measurableResult}
+                    onChange={(e) => setMeasurableResult(e.target.value)}
+                    className="h-9 text-xs rounded-xl border-border/30 bg-background/80 font-medium"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Checkbox option: Final Task of the Day / Post Summary to Google Chat */}

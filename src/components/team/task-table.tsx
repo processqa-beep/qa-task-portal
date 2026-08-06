@@ -60,6 +60,8 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [workTypeFilter, setWorkTypeFilter] = useState<string>('all');
+  const [memberFilter, setMemberFilter] = useState<string>('all');
+  const [dateFilter, setDateFilter] = useState<string>('');
   const [editingTask, setEditingTask] = useState<DailyTask | null>(null);
   const [deletingTaskId, setDeletingTaskId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
@@ -85,10 +87,12 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
 
       const matchesStatus = statusFilter === 'all' || task.status === statusFilter;
       const matchesWorkType = workTypeFilter === 'all' || task.work_type === workTypeFilter;
+      const matchesMember = memberFilter === 'all' || task.employee_id === memberFilter || empName.includes(memberFilter);
+      const matchesDate = !dateFilter || task.date.startsWith(dateFilter);
 
-      return matchesSearch && matchesStatus && matchesWorkType;
+      return matchesSearch && matchesStatus && matchesWorkType && matchesMember && matchesDate;
     });
-  }, [tasks, search, statusFilter, workTypeFilter]);
+  }, [tasks, search, statusFilter, workTypeFilter, memberFilter, dateFilter]);
 
   const openEdit = (task: DailyTask) => {
     setEditingTask(task);
@@ -149,8 +153,8 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
   return (
     <div className="space-y-4">
       {/* Search & Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-3 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[200px] w-full sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search tasks, descriptions, or QA engineers..."
@@ -160,8 +164,40 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
           />
         </div>
 
+        <Select value={memberFilter} onValueChange={(v) => v && setMemberFilter(v)}>
+          <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs rounded-xl border-border/30 font-semibold">
+            <SelectValue placeholder="QA Member" />
+          </SelectTrigger>
+          <SelectContent className="glass-card border-border/30">
+            <SelectItem value="all">All Members</SelectItem>
+            <SelectItem value="Hiren Dodiya">Hiren Dodiya (QA002)</SelectItem>
+            <SelectItem value="Purvesh Kapadiya">Purvesh Kapadiya (QA003)</SelectItem>
+            <SelectItem value="Mehul Chikhaliya">Mehul Chikhaliya (QA004)</SelectItem>
+            <SelectItem value="Chhayank Dave">Chhayank Dave (QA001)</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <div className="w-full sm:w-auto flex items-center gap-1.5">
+          <Input
+            type="date"
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            className="h-9 text-xs rounded-xl bg-background/60 border-border/30 font-medium w-full sm:w-[145px]"
+          />
+          {dateFilter && (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setDateFilter('')}
+              className="h-9 px-2 text-[10px] font-bold text-muted-foreground hover:text-foreground"
+            >
+              Clear Date
+            </Button>
+          )}
+        </div>
+
         <Select value={statusFilter} onValueChange={(v) => v && setStatusFilter(v)}>
-          <SelectTrigger className="w-full sm:w-[140px] h-9 text-xs rounded-xl border-border/30 font-semibold">
+          <SelectTrigger className="w-full sm:w-[130px] h-9 text-xs rounded-xl border-border/30 font-semibold">
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent className="glass-card border-border/30">
@@ -173,7 +209,7 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
         </Select>
 
         <Select value={workTypeFilter} onValueChange={(v) => v && setWorkTypeFilter(v)}>
-          <SelectTrigger className="w-full sm:w-[160px] h-9 text-xs rounded-xl border-border/30 font-semibold">
+          <SelectTrigger className="w-full sm:w-[150px] h-9 text-xs rounded-xl border-border/30 font-semibold">
             <SelectValue placeholder="Work Type" />
           </SelectTrigger>
           <SelectContent className="glass-card border-border/30">
