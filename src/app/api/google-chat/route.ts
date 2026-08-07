@@ -1,43 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-
-interface TaskItem {
-  work_type: string;
-  task_performed: string;
-  status: string;
-  remarks?: string | null;
-}
-
-interface NotificationBody {
-  webhookUrl?: string;
-  employeeName: string;
-  employeeId: string;
-  date: string;
-  tasks: TaskItem[];
-}
-
-const WORK_TYPE_COLORS: Record<string, string> = {
-  'Testing': '#2563eb',
-  'Regression': '#7c3aed',
-  'Automation': '#059669',
-  'Bug Verification': '#dc2626',
-  'Documentation': '#d97706',
-  'Meeting': '#0891b2',
-  'Cloud Vision': '#6d28d9',
-  'Data Analysis': '#0d9488',
-  'IMS': '#be185d',
-  'Process Audit': '#ea580c',
-  'Devlopment': '#4f46e5',
-  'Development': '#4f46e5',
-  'Additional': '#0284c7',
-  'Other': '#4b5563',
-};
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 // Global in-memory cache for Team Google Chat Webhook URL (synced across all devices)
 let SAVED_SERVER_WEBHOOK = process.env.GOOGLE_CHAT_WEBHOOK_URL || process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL || '';
 
-// Log of dates posted to prevent double-posting on auto 7 PM trigger
-const POSTED_DATES_LOG = new Set<string>();
+function getDirectSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+  return createSupabaseClient(url, key);
+}
 
 export async function getSavedWebhookUrlAsync(): Promise<string> {
   if (SAVED_SERVER_WEBHOOK && SAVED_SERVER_WEBHOOK.trim().startsWith('http')) {
@@ -46,12 +17,12 @@ export async function getSavedWebhookUrlAsync(): Promise<string> {
 
   // Fetch from Supabase system_settings table if available
   try {
-    const supabase = await createClient();
+    const supabase = getDirectSupabaseClient();
     const { data } = await supabase
       .from('system_settings')
       .select('value')
       .eq('key', 'google_chat_webhook')
-      .single();
+      .maybeSingle();
 
     if (data && data.value && String(data.value).trim().startsWith('http')) {
       SAVED_SERVER_WEBHOOK = String(data.value).trim();
@@ -74,7 +45,7 @@ export async function saveWebhookUrlToDatabase(url: string) {
   SAVED_SERVER_WEBHOOK = cleanUrl;
 
   try {
-    const supabase = await createClient();
+    const supabase = getDirectSupabaseClient();
     await supabase.from('system_settings').upsert({
       key: 'google_chat_webhook',
       value: cleanUrl,
@@ -86,11 +57,11 @@ export async function saveWebhookUrlToDatabase(url: string) {
 }
 
 export function hasDateBeenPosted(dateStr: string): boolean {
-  return POSTED_DATES_LOG.has(dateStr);
+  return false; // Allow multi-run execution so 7 PM cron always succeeds
 }
 
 export function markDateAsPosted(dateStr: string) {
-  POSTED_DATES_LOG.add(dateStr);
+  // no-op
 }
 
 function formatDateNice(dateStr: string): string {
@@ -109,41 +80,51 @@ function formatDateNice(dateStr: string): string {
   return dateStr;
 }
 
-export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ success: boolean; error?: string }> {
-  const { webhookUrl, employeeName, employeeId, date, tasks } = body;
+export interface TaskItemPayload {
+  work_type: string;
+  task_performed: string;
+  status: string;
+  remarks?: string | null;
+}
 
-  if (webhookUrl && webhookUrl.trim().startsWith('http')) {
-    await saveWebhookUrlToDatabase(webhookUrl.trim());
+export interface SendCardParams {
+  webhookUrl?: string;
+  employeeName: string;
+  employeeId: string;
+  date: string;
+  tasks: TaskItemPayload[];
+}
+
+export async function sendCardToGoogleChat({
+  webhookUrl,
+  employeeName,
+  employeeId,
+  date,
+  tasks,
+}: SendCardParams): Promise<{ success: boolean; error?: string }> {
+  const targetWebhookUrl = webhookUrl || (await getSavedWebhookUrlAsync());
+
+  if (!targetWebhookUrl || !targetWebhookUrl.trim().startsWith('http')) {
+    return {
+      success: false,
+      error: 'Google Chat Webhook URL is missing or invalid.',
+    };
   }
 
-  const activeWebhook = await getSavedWebhookUrlAsync();
-  const targetWebhookUrl =
-    (webhookUrl && webhookUrl.trim().startsWith('http') ? webhookUrl.trim() : '') ||
-    activeWebhook ||
-    process.env.GOOGLE_CHAT_WEBHOOK_URL ||
-    process.env.NEXT_PUBLIC_GOOGLE_CHAT_WEBHOOK_URL;
+  const formattedDateStr = formatDateNice(date);
 
-  if (!targetWebhookUrl) {
-    return { success: false, error: 'Google Chat Webhook URL is not configured.' };
-  }
+  const taskListWidgets = tasks.map((t, idx) => {
+    const isCompleted = t.status === 'Completed';
+    const statusTag = isCompleted
+      ? '<font color="#16a34a"><b>[Completed]</b></font>'
+      : '<font color="#d97706"><b>[Pending]</b></font>';
 
-  if (!tasks || tasks.length === 0) {
-    return { success: false, error: 'No tasks provided to send' };
-  }
+    const workTypeTag = `<font color="#2563eb"><b>[${t.work_type}]</b></font>`;
+    const remarksText = t.remarks ? `<br><i>Note: ${t.remarks}</i>` : '';
 
-  const niceDate = formatDateNice(date);
-
-  const formattedTaskWidgets = tasks.map((t, idx) => {
-    const color = WORK_TYPE_COLORS[t.work_type] || '#2563eb';
-    const number = idx + 1;
-
-    let text = `<b>${number}.</b> &nbsp; <font color="${color}"><b>${t.work_type.toUpperCase()}:</b></font> ${t.task_performed.replace(/\n/g, '<br>')}`;
-    if (t.remarks) {
-      text += `<br><font color="#6b7280"><i>Note: ${t.remarks}</i></font>`;
-    }
     return {
       textParagraph: {
-        text: text,
+        text: `<b>${idx + 1}.</b> ${workTypeTag} ${statusTag} ${t.task_performed}${remarksText}`,
       },
     };
   });
@@ -151,18 +132,36 @@ export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ su
   const cardPayload = {
     cardsV2: [
       {
-        cardId: `daily-report-${employeeId}-${Date.now()}`,
+        cardId: `qa-task-${employeeId}-${date}-${Date.now()}`,
         card: {
           header: {
-            title: `📋 QA Activity Report for ${employeeName} (${employeeId})`,
-            subtitle: `📅 ${niceDate}`,
-            imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906343.png',
+            title: `📋 QA Daily Task Report — ${employeeName}`,
+            subtitle: `👤 ID: ${employeeId} · 📅 Date: ${formattedDateStr}`,
+            imageUrl: 'https://cdn-icons-png.flaticon.com/512/3062/3062634.png',
             imageType: 'CIRCLE',
           },
           sections: [
             {
-              header: `<b>Daily Tasks Summary (${tasks.length})</b>`,
-              widgets: formattedTaskWidgets,
+              header: `<b>Task Details (${tasks.length} Activity Logged)</b>`,
+              widgets: taskListWidgets,
+            },
+            {
+              widgets: [
+                {
+                  buttonList: {
+                    buttons: [
+                      {
+                        text: 'View QA Portal Dashboard',
+                        onClick: {
+                          openLink: {
+                            url: 'https://qa-task-portal.vercel.app/dashboard',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
             },
           ],
         },
@@ -171,7 +170,7 @@ export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ su
   };
 
   try {
-    const googleRes = await fetch(targetWebhookUrl, {
+    const response = await fetch(targetWebhookUrl.trim(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=UTF-8',
@@ -179,45 +178,78 @@ export async function sendCardToGoogleChat(body: NotificationBody): Promise<{ su
       body: JSON.stringify(cardPayload),
     });
 
-    if (googleRes.ok) {
-      markDateAsPosted(date);
+    if (response.ok) {
       return { success: true };
     } else {
-      const errText = await googleRes.text();
-      return { success: false, error: `Google Chat returned error: ${errText}` };
+      const errorText = await response.text();
+      return {
+        success: false,
+        error: `Google Chat API Error (${response.status}): ${errorText}`,
+      };
     }
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : 'Network failure' };
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error posting to Google Chat',
+    };
   }
 }
 
 export async function GET() {
-  const activeWebhook = await getSavedWebhookUrlAsync();
+  const currentUrl = await getSavedWebhookUrlAsync();
   return NextResponse.json({
-    webhookUrl: activeWebhook,
-    postedDates: Array.from(POSTED_DATES_LOG),
+    webhookUrl: currentUrl,
   });
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const body: NotificationBody = await request.json();
+    const body = await request.json();
 
-    if (body.webhookUrl && body.webhookUrl.trim().startsWith('http')) {
-      await saveWebhookUrlToDatabase(body.webhookUrl.trim());
+    if (body.webhookUrl) {
+      await saveWebhookUrlToDatabase(body.webhookUrl);
     }
 
-    const result = await sendCardToGoogleChat(body);
+    if (body.saveOnly) {
+      return NextResponse.json({
+        success: true,
+        message: 'Webhook URL updated successfully.',
+        webhookUrl: getSavedWebhookUrl(),
+      });
+    }
+
+    const { employeeName, employeeId, date, tasks, webhookUrl } = body;
+
+    if (!employeeName || !employeeId || !date || !tasks || !Array.isArray(tasks)) {
+      return NextResponse.json(
+        { error: 'Missing required parameters: employeeName, employeeId, date, tasks' },
+        { status: 400 }
+      );
+    }
+
+    const result = await sendCardToGoogleChat({
+      webhookUrl: webhookUrl || (await getSavedWebhookUrlAsync()),
+      employeeName,
+      employeeId,
+      date,
+      tasks,
+    });
 
     if (result.success) {
-      return NextResponse.json({ success: true, count: body.tasks?.length || 0 });
+      return NextResponse.json({
+        success: true,
+        message: `Task summary card for ${employeeName} posted to Google Chat successfully!`,
+      });
     } else {
-      return NextResponse.json({ error: result.error }, { status: 400 });
+      return NextResponse.json(
+        { error: result.error || 'Failed to post card to Google Chat' },
+        { status: 500 }
+      );
     }
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Internal Server Error' },
-      { status: 500 }
+      { error: err instanceof Error ? err.message : 'Invalid request payload' },
+      { status: 400 }
     );
   }
 }

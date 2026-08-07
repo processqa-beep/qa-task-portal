@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
-import { sendCardToGoogleChat, hasDateBeenPosted, markDateAsPosted, getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { sendCardToGoogleChat, getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
 import { DailyTask } from '@/lib/types';
+import { toStandardDateStr } from '@/lib/utils';
 
 const ID_NAME_MAP: Record<string, string> = {
   QA001: 'Chhayank Dave',
@@ -18,39 +19,30 @@ function getISTDateStr(date: Date = new Date()): string {
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 }
 
+function getDirectSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+  return createSupabaseClient(url, key);
+}
+
 export async function GET(request: NextRequest) {
   try {
     const todayStr = getISTDateStr(new Date());
-    const { searchParams } = new URL(request.url);
-    const force = searchParams.get('force') === 'true';
 
-    // 1. If already posted today and not forced, exit safely
-    if (hasDateBeenPosted(todayStr) && !force) {
-      return NextResponse.json({
-        status: 'already_posted',
-        message: `Daily report for ${todayStr} has already been posted to Google Chat.`,
-        date: todayStr,
-      });
-    }
-
-    // 2. Query today's tasks from Supabase
+    // 1. Query today's tasks from Supabase
     let todayTasks: DailyTask[] = [];
     try {
-      const supabase = await createClient();
-      const { data } = await supabase
-        .from('daily_tasks')
-        .select('*, employee:employees(*)')
-        .gte('date', todayStr)
-        .lte('date', `${todayStr}T23:59:59.999Z`);
+      const supabase = getDirectSupabaseClient();
+      const { data } = await supabase.from('daily_tasks').select('*');
 
       if (data && Array.isArray(data)) {
-        todayTasks = data;
+        todayTasks = data.filter((t) => toStandardDateStr(t.date || t.created_at) === todayStr);
       }
     } catch (dbErr) {
       console.warn('Cron fetch tasks error:', dbErr);
     }
 
-    // If direct query was empty, fallback to fetch internal tasks
+    // Fallback: If direct query was empty, fetch via internal API
     if (todayTasks.length === 0) {
       try {
         const host = request.headers.get('host') || 'localhost:3000';
@@ -75,7 +67,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 3. Group today's tasks by QA member
+    // 2. Group today's tasks by QA member
     const memberTasksMap = new Map<string, { empName: string; empId: string; tasks: DailyTask[] }>();
 
     todayTasks.forEach((t) => {
@@ -95,7 +87,7 @@ export async function GET(request: NextRequest) {
     let postedCount = 0;
     let errors: string[] = [];
 
-    // 4. Send report card for each QA member who submitted tasks today
+    // 3. Send report card for each QA member who submitted tasks today
     for (const group of Array.from(memberTasksMap.values())) {
       const result = await sendCardToGoogleChat({
         webhookUrl,
@@ -118,7 +110,6 @@ export async function GET(request: NextRequest) {
     }
 
     if (postedCount > 0) {
-      markDateAsPosted(todayStr);
       return NextResponse.json({
         success: true,
         postedCards: postedCount,

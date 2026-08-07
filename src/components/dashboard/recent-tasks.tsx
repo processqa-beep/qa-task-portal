@@ -106,7 +106,7 @@ export function RecentTasks({ tasks, isLoading }: RecentTasksProps) {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <Table className="w-full table-fixed">
+            <Table className="w-full min-w-[680px]">
               <TableHeader>
                 <TableRow className="bg-muted/[0.03] hover:bg-muted/[0.03] border-b border-border/20">
                   <TableHead className="text-[11px] font-bold py-3 w-[150px] uppercase tracking-widest text-muted-foreground">QA Member</TableHead>
@@ -150,10 +150,10 @@ export function RecentTasks({ tasks, isLoading }: RecentTasksProps) {
                       </TableCell>
 
                       {/* Task details */}
-                      <TableCell className="py-3 text-xs whitespace-normal break-words font-medium leading-relaxed">
-                        <p>{task.task_performed}</p>
+                      <TableCell className="py-3 text-xs whitespace-normal break-words break-all text-wrap max-w-[280px] sm:max-w-none font-medium leading-relaxed">
+                        <p className="break-words break-all text-wrap">{task.task_performed}</p>
                         {task.remarks && (
-                          <span className="text-[10px] text-muted-foreground mt-1 block italic font-normal">Note: {task.remarks}</span>
+                          <span className="text-[10px] text-muted-foreground mt-1 block italic font-normal break-words break-all text-wrap">Note: {task.remarks}</span>
                         )}
                       </TableCell>
 

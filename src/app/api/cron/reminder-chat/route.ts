@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
 import { DailyTask, Employee } from '@/lib/types';
+import { toStandardDateStr } from '@/lib/utils';
 
 const REPORTING_QA_ENGINEERS: Employee[] = [
   { id: 'QA002', name: 'Hiren Dodiya', role: 'employee', pin: '1234', created_at: '' },
@@ -9,17 +10,19 @@ const REPORTING_QA_ENGINEERS: Employee[] = [
   { id: 'QA004', name: 'Mehul Chikhaliya', role: 'employee', pin: '1234', created_at: '' },
 ];
 
-const REMINDER_SENT_DATES = new Set<string>();
-
 function getISTDateStr(date: Date = new Date()): string {
-  // Returns YYYY-MM-DD in India Standard Time
   return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+}
+
+function getDirectSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+  return createSupabaseClient(url, key);
 }
 
 export async function GET(request: NextRequest) {
   try {
     const now = new Date();
-    // Evaluate day of week in Asia/Kolkata timezone
     const istDayStr = now.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Kolkata' });
     const isWeekend = istDayStr === 'Sat' || istDayStr === 'Sun';
 
@@ -27,7 +30,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const force = searchParams.get('force') === 'true';
 
-    // 1. Disable reminders on Saturday and Sunday (unless forced for testing)
+    // 1. Disable reminders on Saturday and Sunday (unless forced)
     if (isWeekend && !force) {
       return NextResponse.json({
         status: 'weekend_disabled',
@@ -37,33 +40,20 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 2. Prevent duplicate reminders on the same calendar day (unless forced)
-    if (REMINDER_SENT_DATES.has(todayStr) && !force) {
-      return NextResponse.json({
-        status: 'already_sent_today',
-        message: `5 PM reminder for ${todayStr} has already been sent to Google Chat.`,
-        date: todayStr,
-      });
-    }
-
-    // 3. Query today's tasks from Supabase
+    // 2. Query today's tasks from Supabase
     let todayTasks: DailyTask[] = [];
     try {
-      const supabase = await createClient();
-      const { data } = await supabase
-        .from('daily_tasks')
-        .select('*')
-        .gte('date', todayStr)
-        .lte('date', `${todayStr}T23:59:59.999Z`);
+      const supabase = getDirectSupabaseClient();
+      const { data } = await supabase.from('daily_tasks').select('*');
 
       if (data && Array.isArray(data)) {
-        todayTasks = data;
+        todayTasks = data.filter((t) => toStandardDateStr(t.date || t.created_at) === todayStr);
       }
     } catch (dbErr) {
       console.warn('Reminder cron fetch tasks error:', dbErr);
     }
 
-    // 4. Identify members who have NOT submitted today's task report
+    // 3. Identify members who have NOT submitted today's task report
     const pendingMembers = REPORTING_QA_ENGINEERS.filter((emp) => {
       return !todayTasks.some(
         (t) => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
@@ -80,10 +70,10 @@ export async function GET(request: NextRequest) {
 
     const membersToRemind = pendingMembers.length > 0 ? pendingMembers : REPORTING_QA_ENGINEERS;
 
-    // 5. Retrieve active Webhook URL from Supabase / memory / env
+    // 4. Retrieve active Webhook URL
     const targetWebhookUrl = await getSavedWebhookUrlAsync();
 
-    if (!targetWebhookUrl) {
+    if (!targetWebhookUrl || !targetWebhookUrl.trim().startsWith('http')) {
       return NextResponse.json(
         { error: 'Google Chat Webhook URL is not configured.' },
         { status: 400 }
@@ -133,8 +123,8 @@ export async function GET(request: NextRequest) {
       ],
     };
 
-    // 6. Send reminder card via Google Chat Webhook API
-    const googleRes = await fetch(targetWebhookUrl, {
+    // 5. Send reminder card via Google Chat Webhook API
+    const googleRes = await fetch(targetWebhookUrl.trim(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json; charset=UTF-8',
@@ -143,7 +133,6 @@ export async function GET(request: NextRequest) {
     });
 
     if (googleRes.ok) {
-      REMINDER_SENT_DATES.add(todayStr);
       return NextResponse.json({
         success: true,
         pendingCount: membersToRemind.length,

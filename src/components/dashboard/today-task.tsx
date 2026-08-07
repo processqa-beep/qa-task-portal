@@ -295,7 +295,7 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
 
       {/* Full Report Table */}
       <div className="overflow-x-auto">
-        <Table className="w-full">
+        <Table className="w-full min-w-[620px]">
           <TableHeader>
             <TableRow className="bg-muted/[0.03] hover:bg-muted/[0.03] border-y border-border/15">
               <TableHead className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground py-2.5 w-[50px] text-center">Sr</TableHead>
@@ -349,10 +349,10 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
                 {/* Task Performed */}
                 <TableCell className="py-3">
                   {row.submitted ? (
-                    <div>
-                      <p className="text-xs font-medium leading-relaxed whitespace-normal break-words">{row.taskPerformed}</p>
+                    <div className="max-w-[280px] sm:max-w-none">
+                      <p className="text-xs font-medium leading-relaxed whitespace-normal break-words break-all text-wrap">{row.taskPerformed}</p>
                       {row.remarks && (
-                        <p className="text-[10px] text-muted-foreground mt-1 italic font-normal">Note: {row.remarks}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1 italic font-normal break-words break-all text-wrap">Note: {row.remarks}</p>
                       )}
                     </div>
                   ) : (

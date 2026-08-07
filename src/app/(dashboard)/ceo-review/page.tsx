@@ -569,7 +569,7 @@ export default function ImpactReviewPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <Table>
+          <Table className="w-full min-w-[720px]">
             <TableHeader>
               <TableRow className="bg-muted/[0.03] hover:bg-muted/[0.03] border-b border-border/15">
                 {['Sr','Task / Activity','Category','Level','QA Member','Measurable Result','Date',''].map((h,i) => (
@@ -583,9 +583,9 @@ export default function ImpactReviewPage() {
                   <TableCell className="py-3 text-center">
                     <span className="text-[11px] font-bold text-muted-foreground">{idx+1}</span>
                   </TableCell>
-                  <TableCell className="py-3">
-                    <p className="text-xs font-bold tracking-tight leading-snug">{item.taskTitle}</p>
-                    <p className="text-[10px] text-muted-foreground font-medium mt-0.5 leading-relaxed">{item.description}</p>
+                  <TableCell className="py-3 max-w-[260px]">
+                    <p className="text-xs font-bold tracking-tight leading-snug break-words break-all text-wrap">{item.taskTitle}</p>
+                    <p className="text-[10px] text-muted-foreground font-medium mt-0.5 leading-relaxed break-words break-all text-wrap">{item.description}</p>
                   </TableCell>
                   <TableCell className="py-3">
                     <Badge variant="outline" className="text-[9px] font-bold px-2 py-0.5 rounded-lg"
@@ -606,8 +606,8 @@ export default function ImpactReviewPage() {
                       <span className="text-xs font-semibold">{item.assignee.split(' ')[0]}</span>
                     </div>
                   </TableCell>
-                  <TableCell className="py-3">
-                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">{item.measurableResult || '—'}</p>
+                  <TableCell className="py-3 max-w-[200px]">
+                    <p className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 break-words break-all text-wrap">{item.measurableResult || '—'}</p>
                   </TableCell>
                   <TableCell className="py-3">
                     <span className="text-[10px] text-muted-foreground font-medium">

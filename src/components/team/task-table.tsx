@@ -272,9 +272,9 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
                     </TableCell>
 
                     <TableCell className="text-xs py-3 max-w-[400px]">
-                      <p className="text-foreground leading-relaxed font-medium whitespace-normal break-words">{task.task_performed}</p>
+                      <p className="text-foreground leading-relaxed font-medium whitespace-normal break-words break-all text-wrap">{task.task_performed}</p>
                       {task.remarks && (
-                        <p className="text-[10px] text-muted-foreground mt-1 italic font-normal">Note: {task.remarks}</p>
+                        <p className="text-[10px] text-muted-foreground mt-1 italic font-normal break-words break-all text-wrap">Note: {task.remarks}</p>
                       )}
                     </TableCell>
 
@@ -339,7 +339,7 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
                 <Badge variant="outline" className={`text-[9px] font-bold ${badgeStyle}`}>{task.work_type}</Badge>
               </div>
 
-              <p className="text-xs text-foreground font-medium leading-relaxed">{task.task_performed}</p>
+              <p className="text-xs text-foreground font-medium leading-relaxed break-words break-all text-wrap">{task.task_performed}</p>
 
               <div className="flex items-center justify-between pt-2 border-t border-border/15 text-[10px] text-muted-foreground">
                 <span className="flex items-center gap-1 font-medium">
