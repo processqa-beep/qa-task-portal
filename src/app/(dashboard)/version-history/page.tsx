@@ -16,12 +16,28 @@ interface VersionInfo {
 
 const VERSIONS: VersionInfo[] = [
   {
-    version: 'v2.5.0',
-    date: 'August 6, 2026',
+    version: 'v2.6.0',
+    date: 'August 7, 2026',
     badge: 'Latest Release',
     badgeColor: 'bg-primary/10 text-primary border-primary/20 font-bold',
     icon: Sparkles,
     iconColor: 'bg-primary/10 text-primary border-primary/20',
+    title: 'Google Chat Cron Webhook Resolution, Mobile Text Auto-Wrapping & UI Polish',
+    changes: [
+      'Refactored /api/cron/reminder-chat and /api/cron/auto-post-chat to use direct Supabase server client instance for Webhook URL resolution, ensuring 100% reliable 5 PM reminders and 7 PM task posts.',
+      'Removed in-memory lock sets to prevent serverless cold-start execution skips on Vercel Cron triggers.',
+      'Added mobile phone device text auto-wrapping (break-words break-all text-wrap) across TodayTask, RecentTasks, TaskTable, and CEO Review tables and cards.',
+      'Configured responsive horizontal min-width scroll containers to prevent table column stretching or squishing on small mobile displays.',
+      'Restored Daily Task Activity Summary (TodayTask) to strictly show current date submitted reports with a clean header layout.',
+    ],
+  },
+  {
+    version: 'v2.5.0',
+    date: 'August 6, 2026',
+    badge: 'Stable',
+    badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-bold',
+    icon: Shield,
+    iconColor: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
     title: 'Global Date Filter Analytics, Impact Review Form Linkage & SSR Stability',
     changes: [
       'Built Global Date Selector on Dashboard allowing users to pick any specific date or date range to update all KPI cards, 6 visual charts, leaderboards, and report tables in real time.',
