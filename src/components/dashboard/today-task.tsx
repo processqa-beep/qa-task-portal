@@ -180,54 +180,32 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
         }
       }
 
-      if (targetDateTasks.length === 0) {
-        toast.error(`No tasks found for date ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`, {
-          description: 'Please make sure a task was submitted for this date.',
-        });
-        return;
-      }
-
-      // 3. Group targetDateTasks dynamically by member
-      const memberTasksMap = new Map<string, { empName: string; empId: string; tasks: DailyTask[] }>();
-
-      targetDateTasks.forEach((t) => {
-        const rawEmp = t.employee_id || t.employee?.id || 'QA004';
-        const empId = ID_NAME_MAP[rawEmp] ? (rawEmp.startsWith('QA') ? rawEmp : ID_NAME_MAP[rawEmp]) : rawEmp;
-        const empName = t.employee?.name || (ID_NAME_MAP[empId] || empId);
-
-        // Filter by postMemberId if specific member selected
-        if (postMemberId !== 'ALL' && empId !== postMemberId && empName !== postMemberId) {
-          return;
-        }
-
-        const key = empId;
-        if (!memberTasksMap.has(key)) {
-          memberTasksMap.set(key, { empName, empId, tasks: [] });
-        }
-        memberTasksMap.get(key)!.tasks.push(t);
-      });
-
-      if (memberTasksMap.size === 0) {
-        toast.error(`No tasks found for selected member on ${formatDate(cleanPostDate, 'MMM dd, yyyy')}`);
-        return;
-      }
+      // 3. Ensure ALL reporting members are included if postMemberId === 'ALL'
+      const targetMembers = reportingMembers.filter(emp =>
+        postMemberId === 'ALL' || emp.id === postMemberId || emp.name === postMemberId
+      );
 
       let totalPosted = 0;
       let lastError = '';
 
-      for (const group of Array.from(memberTasksMap.values())) {
+      for (const emp of targetMembers) {
+        const empTasks = targetDateTasks.filter(
+          t => t.employee_id === emp.id || t.employee_id === emp.name || t.employee?.name === emp.name
+        );
+
         const res = await sendGoogleChatNotification({
           webhookUrl: webhookUrlInput.trim(),
-          employeeName: group.empName,
-          employeeId: group.empId,
+          employeeName: emp.name,
+          employeeId: emp.id,
           date: cleanPostDate,
-          tasks: group.tasks.map(t => ({
+          tasks: empTasks.map(t => ({
             work_type: t.work_type,
             task_performed: t.task_performed,
             status: t.status,
             remarks: t.remarks,
           })),
         });
+
         if (res.success) {
           totalPosted++;
         } else if (res.error) {

@@ -113,21 +113,32 @@ export async function sendCardToGoogleChat({
 
   const formattedDateStr = formatDateNice(date);
 
-  const taskListWidgets = tasks.map((t, idx) => {
-    const isCompleted = t.status === 'Completed';
-    const statusTag = isCompleted
-      ? '<font color="#16a34a"><b>[Completed]</b></font>'
-      : '<font color="#d97706"><b>[Pending]</b></font>';
+  const hasSubmittedTasks = tasks && tasks.length > 0 && tasks.some(t => t.task_performed && t.task_performed !== 'Not submitted yet');
 
-    const workTypeTag = `<font color="#2563eb"><b>[${t.work_type}]</b></font>`;
-    const remarksText = t.remarks ? `<br><i>Note: ${t.remarks}</i>` : '';
+  const taskListWidgets = hasSubmittedTasks
+    ? tasks.map((t, idx) => {
+        const isCompleted = t.status === 'Completed';
+        const statusTag = isCompleted
+          ? '<font color="#16a34a"><b>[COMPLETED]</b></font>'
+          : '<font color="#d97706"><b>[PENDING]</b></font>';
 
-    return {
-      textParagraph: {
-        text: `<b>${idx + 1}.</b> ${workTypeTag} ${statusTag} ${t.task_performed}${remarksText}`,
-      },
-    };
-  });
+        const workTypeUpper = (t.work_type || 'TASK').toUpperCase();
+        const workTypeTag = `<font color="#2563eb"><b>[${workTypeUpper}]</b></font>`;
+        const remarksText = t.remarks ? `<br><i>Note: ${t.remarks}</i>` : '';
+
+        return {
+          textParagraph: {
+            text: `<b>${idx + 1}.</b> ${workTypeTag} ${statusTag}: ${t.task_performed}${remarksText}`,
+          },
+        };
+      })
+    : [
+        {
+          textParagraph: {
+            text: `<font color="#dc2626"><b>[NOT SUBMITTED YET]</b></font><br><i>No daily task report submitted for this date.</i>`,
+          },
+        },
+      ];
 
   const cardPayload = {
     cardsV2: [
@@ -135,14 +146,23 @@ export async function sendCardToGoogleChat({
         cardId: `qa-task-${employeeId}-${date}-${Date.now()}`,
         card: {
           header: {
-            title: `📋 QA Daily Task Report — ${employeeName}`,
-            subtitle: `👤 ID: ${employeeId} · 📅 Date: ${formattedDateStr}`,
+            title: `📋 QA Daily Task Report`,
+            subtitle: `📅 ${formattedDateStr}`,
             imageUrl: 'https://cdn-icons-png.flaticon.com/512/3062/3062634.png',
             imageType: 'CIRCLE',
           },
           sections: [
             {
-              header: `<b>Task Details (${tasks.length} Activity Logged)</b>`,
+              widgets: [
+                {
+                  textParagraph: {
+                    text: `<b>👤 QA Engineer:</b> ${employeeName} (${employeeId})<br><b>📅 Report Date:</b> ${formattedDateStr}<br><b>📊 Status:</b> ${hasSubmittedTasks ? '<font color="#16a34a"><b>Submitted</b></font>' : '<font color="#dc2626"><b>⚠️ Pending / Not Submitted Yet</b></font>'}`,
+                  },
+                },
+              ],
+            },
+            {
+              header: `<b>Task Activity Log (${hasSubmittedTasks ? tasks.length : 0} Items)</b>`,
               widgets: taskListWidgets,
             },
             {
@@ -151,7 +171,7 @@ export async function sendCardToGoogleChat({
                   buttonList: {
                     buttons: [
                       {
-                        text: 'View QA Portal Dashboard',
+                        text: 'Open QA Portal Dashboard',
                         onClick: {
                           openLink: {
                             url: 'https://qa-task-portal.vercel.app/dashboard',
@@ -220,9 +240,9 @@ export async function POST(request: NextRequest) {
 
     const { employeeName, employeeId, date, tasks, webhookUrl } = body;
 
-    if (!employeeName || !employeeId || !date || !tasks || !Array.isArray(tasks)) {
+    if (!employeeName || !employeeId || !date || tasks === undefined) {
       return NextResponse.json(
-        { error: 'Missing required parameters: employeeName, employeeId, date, tasks' },
+        { error: 'Missing required parameters: employeeName, employeeId, date' },
         { status: 400 }
       );
     }
@@ -232,7 +252,7 @@ export async function POST(request: NextRequest) {
       employeeName,
       employeeId,
       date,
-      tasks,
+      tasks: Array.isArray(tasks) ? tasks : [],
     });
 
     if (result.success) {
