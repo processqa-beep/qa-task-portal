@@ -185,11 +185,13 @@ export async function GET(request: NextRequest) {
 
       const { data, error } = await query;
       if (data && !error && data.length > 0) {
-        // Fetch employees to attach metadata
-        const { data: employees } = await supabase.from('employees').select('*');
-        const empList = employees || [];
+        const normalTasks = data.filter((t) => !t.task_performed?.startsWith('[TASK_ASSIGNMENT]'));
+        if (normalTasks.length > 0) {
+          // Fetch employees to attach metadata
+          const { data: employees } = await supabase.from('employees').select('*');
+          const empList = employees || [];
 
-        const tasksWithEmployees = data.map((task) => {
+          const tasksWithEmployees = normalTasks.map((task) => {
           const matchedEmp = empList.find(
             (e) => e.id === task.employee_id || e.name === task.employee_id
           ) || {
@@ -199,14 +201,15 @@ export async function GET(request: NextRequest) {
             pin: '1234',
             created_at: '',
           };
-          return {
-            ...task,
-            work_type: task.work_type === 'Devlopment' ? 'Development' : task.work_type,
-            employee: matchedEmp,
-          };
-        });
+            return {
+              ...task,
+              work_type: task.work_type === 'Devlopment' ? 'Development' : task.work_type,
+              employee: matchedEmp,
+            };
+          });
 
-        return NextResponse.json({ tasks: tasksWithEmployees });
+          return NextResponse.json({ tasks: tasksWithEmployees });
+        }
       }
     } catch (dbErr) {
       console.warn('Supabase fetch tasks error, using memory store:', dbErr);

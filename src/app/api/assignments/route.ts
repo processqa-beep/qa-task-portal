@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { sendAssignmentCardToGoogleChat, saveWebhookUrlToDatabase, getSavedWebhookUrlAsync } from '@/app/api/google-chat/route';
 import { AssignedTask, Employee } from '@/lib/types';
+import crypto from 'crypto';
 
 const REPORTING_ENGINEERS: Employee[] = [
   { id: 'QA002', name: 'Hiren Dodiya', role: 'employee' as const, pin: '1234', created_at: '' },
@@ -11,78 +12,51 @@ const REPORTING_ENGINEERS: Employee[] = [
 
 function getDirectSupabaseClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://nzeohmmjcdzzjoqanggi.supabase.co';
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder';
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_uiHQCxkly03-n0dVnye5kw_9l9ng59N';
   return createSupabaseClient(url, key);
 }
 
 let SERVER_ASSIGNMENTS_CACHE: AssignedTask[] = [];
 
-async function syncBackupToSystemSettings(tasks: AssignedTask[]) {
-  try {
-    const supabase = getDirectSupabaseClient();
-    await supabase.from('system_settings').upsert({
-      key: 'task_assignments_backup',
-      value: JSON.stringify(tasks),
-      updated_at: new Date().toISOString(),
-    });
-  } catch (err) {
-    console.warn('Backup sync to system_settings error:', err);
-  }
-}
-
-async function loadBackupFromSystemSettings(): Promise<AssignedTask[]> {
-  try {
-    const supabase = getDirectSupabaseClient();
-    const { data } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('key', 'task_assignments_backup')
-      .maybeSingle();
-
-    if (data && data.value) {
-      const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-      if (Array.isArray(parsed)) return parsed;
-    }
-  } catch {
-    // ignore
-  }
-  return [];
-}
-
 export async function GET() {
-  let dbTasks: AssignedTask[] = [];
-
-  // 1. Try fetching from Supabase table task_assignments
   try {
     const supabase = getDirectSupabaseClient();
     const { data, error } = await supabase
-      .from('task_assignments')
+      .from('daily_tasks')
       .select('*')
+      .like('task_performed', '[TASK_ASSIGNMENT]%')
       .order('created_at', { ascending: false });
 
-    if (data && !error && Array.isArray(data) && data.length > 0) {
-      dbTasks = data.map((t) => ({
-        ...t,
-        assignee: REPORTING_ENGINEERS.find((e) => e.id === t.assigned_to) || {
-          id: t.assigned_to,
-          name: t.assigned_to,
-          role: 'employee',
-          pin: '1234',
-          created_at: '',
-        },
-      }));
-      SERVER_ASSIGNMENTS_CACHE = dbTasks;
-      return NextResponse.json({ assignments: dbTasks });
+    if (data && !error && Array.isArray(data)) {
+      const parsedTasks: AssignedTask[] = [];
+      for (const row of data) {
+        try {
+          const jsonStr = (row.task_performed || '').replace('[TASK_ASSIGNMENT] ', '').trim();
+          if (jsonStr.startsWith('{')) {
+            const taskObj = JSON.parse(jsonStr);
+            const assigneeObj = REPORTING_ENGINEERS.find((e) => e.id === taskObj.assigned_to) || {
+              id: taskObj.assigned_to,
+              name: taskObj.assigned_to,
+              role: 'employee',
+              pin: '1234',
+              created_at: '',
+            };
+            parsedTasks.push({
+              ...taskObj,
+              db_uuid: row.id,
+              assignee: assigneeObj,
+            });
+          }
+        } catch {
+          // ignore corrupted json
+        }
+      }
+
+      SERVER_ASSIGNMENTS_CACHE = parsedTasks;
+      return NextResponse.json({ assignments: parsedTasks });
     }
   } catch (err) {
-    console.warn('Supabase fetch task_assignments error:', err);
-  }
-
-  // 2. Fallback to system_settings backup key
-  const backup = await loadBackupFromSystemSettings();
-  if (backup.length > 0) {
-    SERVER_ASSIGNMENTS_CACHE = backup;
-    return NextResponse.json({ assignments: backup });
+    console.warn('Supabase fetch assignments error:', err);
   }
 
   return NextResponse.json({ assignments: SERVER_ASSIGNMENTS_CACHE || [] });
@@ -97,13 +71,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
-    // Save webhook if provided
     if (webhookUrl && String(webhookUrl).trim().startsWith('http')) {
       await saveWebhookUrlToDatabase(String(webhookUrl).trim());
     }
 
     const assigneeObj = REPORTING_ENGINEERS.find((e) => e.id === assigned_to);
     const id = body.id || `asgn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const dbUuid = crypto.randomUUID();
 
     const newTask: AssignedTask = {
       id,
@@ -118,34 +92,30 @@ export async function POST(request: NextRequest) {
       assignee: assigneeObj,
     };
 
-    // 1. Save directly to Supabase table task_assignments
+    // 1. Direct Supabase PostgreSQL Insert
     try {
       const supabase = getDirectSupabaseClient();
-      await supabase.from('task_assignments').upsert({
-        id: newTask.id,
-        title: newTask.title,
-        description: newTask.description,
-        assigned_to: newTask.assigned_to,
-        assigned_by: newTask.assigned_by,
-        due_date: newTask.due_date,
-        priority: newTask.priority,
-        status: newTask.status,
-        created_at: newTask.created_at,
+      const taskPerformedPayload = `[TASK_ASSIGNMENT] ${JSON.stringify(newTask)}`;
+      await supabase.from('daily_tasks').insert({
+        id: dbUuid,
+        employee_id: newTask.assigned_to,
+        date: newTask.due_date,
+        work_type: 'Other',
+        task_performed: taskPerformedPayload,
+        status: 'Pending',
+        remarks: `Task Assignment: ${newTask.id}`,
       });
     } catch (err) {
       console.warn('Supabase insert assignment error:', err);
     }
 
-    // 2. Dual persistence to system_settings backup
-    const existingBackup = await loadBackupFromSystemSettings();
-    const mergedList = [newTask, ...existingBackup.filter((a) => a.id !== id)];
-    SERVER_ASSIGNMENTS_CACHE = mergedList;
-    await syncBackupToSystemSettings(mergedList);
+    // 2. In-memory update
+    SERVER_ASSIGNMENTS_CACHE = [newTask, ...SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id)];
 
     // 3. Send automated Google Chat notification card with complete assignment details
     try {
       const activeWebhook = webhookUrl || (await getSavedWebhookUrlAsync());
-      const chatRes = await sendAssignmentCardToGoogleChat({
+      await sendAssignmentCardToGoogleChat({
         webhookUrl: activeWebhook,
         assigneeName: assigneeObj?.name || assigned_to,
         assigneeId: assigned_to,
@@ -155,9 +125,6 @@ export async function POST(request: NextRequest) {
         dueDate: newTask.due_date,
         priority: newTask.priority,
       });
-      if (!chatRes.success) {
-        console.warn('Google Chat notification returned warning:', chatRes.error);
-      }
     } catch (chatErr) {
       console.warn('Failed to send assignment Google Chat notification:', chatErr);
     }
@@ -177,19 +144,40 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID and Status are required' }, { status: 400 });
     }
 
-    // 1. Update directly in Supabase table
+    // 1. Find and update in Supabase
     try {
       const supabase = getDirectSupabaseClient();
-      await supabase.from('task_assignments').update({ status }).eq('id', id);
+      const { data: rows } = await supabase
+        .from('daily_tasks')
+        .select('*')
+        .like('task_performed', `%${id}%`);
+
+      if (rows && rows.length > 0) {
+        for (const row of rows) {
+          try {
+            const jsonStr = (row.task_performed || '').replace('[TASK_ASSIGNMENT] ', '').trim();
+            const taskObj = JSON.parse(jsonStr);
+            taskObj.status = status;
+
+            await supabase
+              .from('daily_tasks')
+              .update({
+                task_performed: `[TASK_ASSIGNMENT] ${JSON.stringify(taskObj)}`,
+                status: status === 'Completed' ? 'Completed' : 'Pending',
+              })
+              .eq('id', row.id);
+          } catch {
+            // ignore
+          }
+        }
+      }
     } catch (err) {
       console.warn('Supabase update assignment error:', err);
     }
 
-    // 2. Update system_settings backup
-    const existingBackup = await loadBackupFromSystemSettings();
-    const updatedBackup = existingBackup.map((a) => (a.id === id ? { ...a, status } : a));
-    SERVER_ASSIGNMENTS_CACHE = updatedBackup;
-    await syncBackupToSystemSettings(updatedBackup);
+    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.map((a) =>
+      a.id === id ? { ...a, status } : a
+    );
 
     return NextResponse.json({ success: true, id, status });
   } catch {
@@ -207,14 +195,28 @@ export async function DELETE(request: NextRequest) {
 
     if (deleteAllOld === 'true') {
       try {
-        await supabase.from('task_assignments').delete().eq('status', 'Completed');
+        const { data: rows } = await supabase
+          .from('daily_tasks')
+          .select('*')
+          .like('task_performed', '[TASK_ASSIGNMENT]%');
+
+        if (rows && rows.length > 0) {
+          for (const row of rows) {
+            try {
+              const jsonStr = (row.task_performed || '').replace('[TASK_ASSIGNMENT] ', '').trim();
+              const taskObj = JSON.parse(jsonStr);
+              if (taskObj.status === 'Completed') {
+                await supabase.from('daily_tasks').delete().eq('id', row.id);
+              }
+            } catch {
+              // ignore
+            }
+          }
+        }
       } catch (err) {
         console.warn('Supabase delete completed assignments error:', err);
       }
-      const existingBackup = await loadBackupFromSystemSettings();
-      const filtered = existingBackup.filter((a) => a.status !== 'Completed');
-      SERVER_ASSIGNMENTS_CACHE = filtered;
-      await syncBackupToSystemSettings(filtered);
+      SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.status !== 'Completed');
       return NextResponse.json({ success: true, message: 'All completed tasks deleted' });
     }
 
@@ -223,15 +225,21 @@ export async function DELETE(request: NextRequest) {
     }
 
     try {
-      await supabase.from('task_assignments').delete().eq('id', id);
+      const { data: rows } = await supabase
+        .from('daily_tasks')
+        .select('id')
+        .like('task_performed', `%${id}%`);
+
+      if (rows && rows.length > 0) {
+        for (const row of rows) {
+          await supabase.from('daily_tasks').delete().eq('id', row.id);
+        }
+      }
     } catch (err) {
       console.warn('Supabase delete assignment error:', err);
     }
 
-    const existingBackup = await loadBackupFromSystemSettings();
-    const filtered = existingBackup.filter((a) => a.id !== id);
-    SERVER_ASSIGNMENTS_CACHE = filtered;
-    await syncBackupToSystemSettings(filtered);
+    SERVER_ASSIGNMENTS_CACHE = SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id);
 
     return NextResponse.json({ success: true });
   } catch {
