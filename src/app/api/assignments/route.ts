@@ -19,15 +19,42 @@ function getDirectSupabaseClient() {
 let SERVER_ASSIGNMENTS_CACHE: AssignedTask[] = [];
 
 export async function GET() {
+  const supabase = getDirectSupabaseClient();
+
+  // 1. Try dedicated task_assignments table first
   try {
-    const supabase = getDirectSupabaseClient();
+    const { data: asgnData, error: asgnErr } = await supabase
+      .from('task_assignments')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (asgnData && !asgnErr && Array.isArray(asgnData) && asgnData.length > 0) {
+      const mapped: AssignedTask[] = asgnData.map((t) => ({
+        ...t,
+        assignee: REPORTING_ENGINEERS.find((e) => e.id === t.assigned_to) || {
+          id: t.assigned_to,
+          name: t.assigned_to,
+          role: 'employee',
+          pin: '1234',
+          created_at: '',
+        },
+      }));
+      SERVER_ASSIGNMENTS_CACHE = mapped;
+      return NextResponse.json({ assignments: mapped });
+    }
+  } catch {
+    // ignore
+  }
+
+  // 2. Read from daily_tasks tagged [TASK_ASSIGNMENT]
+  try {
     const { data, error } = await supabase
       .from('daily_tasks')
       .select('*')
       .like('task_performed', '[TASK_ASSIGNMENT]%')
       .order('created_at', { ascending: false });
 
-    if (data && !error && Array.isArray(data)) {
+    if (data && !error && Array.isArray(data) && data.length > 0) {
       const parsedTasks: AssignedTask[] = [];
       for (const row of data) {
         try {
@@ -92,9 +119,27 @@ export async function POST(request: NextRequest) {
       assignee: assigneeObj,
     };
 
-    // 1. Direct Supabase PostgreSQL Insert
+    const supabase = getDirectSupabaseClient();
+
+    // 1. Try insert into dedicated task_assignments table
     try {
-      const supabase = getDirectSupabaseClient();
+      await supabase.from('task_assignments').upsert({
+        id: newTask.id,
+        title: newTask.title,
+        description: newTask.description,
+        assigned_to: newTask.assigned_to,
+        assigned_by: newTask.assigned_by,
+        due_date: newTask.due_date,
+        priority: newTask.priority,
+        status: newTask.status,
+        created_at: newTask.created_at,
+      });
+    } catch {
+      // table might not exist yet
+    }
+
+    // 2. Insert into daily_tasks table as guaranteed fallback
+    try {
       const taskPerformedPayload = `[TASK_ASSIGNMENT] ${JSON.stringify(newTask)}`;
       await supabase.from('daily_tasks').insert({
         id: dbUuid,
@@ -109,10 +154,10 @@ export async function POST(request: NextRequest) {
       console.warn('Supabase insert assignment error:', err);
     }
 
-    // 2. In-memory update
+    // 3. In-memory update
     SERVER_ASSIGNMENTS_CACHE = [newTask, ...SERVER_ASSIGNMENTS_CACHE.filter((a) => a.id !== id)];
 
-    // 3. Send automated Google Chat notification card with complete assignment details
+    // 4. Send automated Google Chat notification card with complete assignment details
     try {
       const activeWebhook = webhookUrl || (await getSavedWebhookUrlAsync());
       await sendAssignmentCardToGoogleChat({
@@ -144,9 +189,17 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'ID and Status are required' }, { status: 400 });
     }
 
-    // 1. Find and update in Supabase
+    const supabase = getDirectSupabaseClient();
+
+    // 1. Update in task_assignments table
     try {
-      const supabase = getDirectSupabaseClient();
+      await supabase.from('task_assignments').update({ status }).eq('id', id);
+    } catch {
+      // ignore
+    }
+
+    // 2. Update in daily_tasks
+    try {
       const { data: rows } = await supabase
         .from('daily_tasks')
         .select('*')
@@ -195,6 +248,11 @@ export async function DELETE(request: NextRequest) {
 
     if (deleteAllOld === 'true') {
       try {
+        await supabase.from('task_assignments').delete().eq('status', 'Completed');
+      } catch {
+        // ignore
+      }
+      try {
         const { data: rows } = await supabase
           .from('daily_tasks')
           .select('*')
@@ -222,6 +280,12 @@ export async function DELETE(request: NextRequest) {
 
     if (!id) {
       return NextResponse.json({ error: 'Task ID is required' }, { status: 400 });
+    }
+
+    try {
+      await supabase.from('task_assignments').delete().eq('id', id);
+    } catch {
+      // ignore
     }
 
     try {
