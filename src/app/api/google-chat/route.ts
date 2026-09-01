@@ -95,6 +95,17 @@ export interface SendCardParams {
   tasks: TaskItemPayload[];
 }
 
+export interface SendAssignmentParams {
+  webhookUrl?: string;
+  assigneeName: string;
+  assigneeId: string;
+  assignedBy: string;
+  title: string;
+  description: string;
+  dueDate: string;
+  priority: string;
+}
+
 export async function sendCardToGoogleChat({
   webhookUrl,
   employeeName,
@@ -215,6 +226,116 @@ export async function sendCardToGoogleChat({
   }
 }
 
+export async function sendAssignmentCardToGoogleChat({
+  webhookUrl,
+  assigneeName,
+  assigneeId,
+  assignedBy,
+  title,
+  description,
+  dueDate,
+  priority,
+}: SendAssignmentParams): Promise<{ success: boolean; error?: string }> {
+  const targetWebhookUrl = webhookUrl || (await getSavedWebhookUrlAsync());
+
+  if (!targetWebhookUrl || !targetWebhookUrl.trim().startsWith('http')) {
+    return {
+      success: false,
+      error: 'Google Chat Webhook URL is missing or invalid.',
+    };
+  }
+
+  const formattedDateStr = formatDateNice(dueDate);
+  const priorityColor =
+    priority === 'Critical'
+      ? '#dc2626'
+      : priority === 'High'
+      ? '#ea580c'
+      : priority === 'Medium'
+      ? '#2563eb'
+      : '#16a34a';
+
+  const cardPayload = {
+    cardsV2: [
+      {
+        cardId: `qa-assignment-${assigneeId}-${Date.now()}`,
+        card: {
+          header: {
+            title: `📌 New Task Assigned — ${assigneeName}`,
+            subtitle: `👤 Assigned To: ${assigneeName} (${assigneeId})`,
+            imageUrl: 'https://cdn-icons-png.flaticon.com/512/906/906343.png',
+            imageType: 'CIRCLE',
+          },
+          sections: [
+            {
+              widgets: [
+                {
+                  textParagraph: {
+                    text: `<b>👤 Assigned To:</b> ${assigneeName} (${assigneeId})<br><b>👨‍💼 Assigned By:</b> ${assignedBy}<br><b>📅 Due Date:</b> ${formattedDateStr}<br><b>🚨 Priority:</b> <font color="${priorityColor}"><b>${priority.toUpperCase()}</b></font>`,
+                  },
+                },
+                {
+                  textParagraph: {
+                    text: `<b>📌 Task Title:</b><br>${title}`,
+                  },
+                },
+                {
+                  textParagraph: {
+                    text: `<b>📝 Description / Instructions:</b><br>${description}`,
+                  },
+                },
+              ],
+            },
+            {
+              widgets: [
+                {
+                  buttonList: {
+                    buttons: [
+                      {
+                        text: 'Open Task Assignments',
+                        onClick: {
+                          openLink: {
+                            url: 'https://qa-task-portal.vercel.app/assignments',
+                          },
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      },
+    ],
+  };
+
+  try {
+    const response = await fetch(targetWebhookUrl.trim(), {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+      },
+      body: JSON.stringify(cardPayload),
+    });
+
+    if (response.ok) {
+      return { success: true };
+    } else {
+      const errorText = await response.text();
+      return {
+        success: false,
+        error: `Google Chat API Error (${response.status}): ${errorText}`,
+      };
+    }
+  } catch (err) {
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Network error posting to Google Chat',
+    };
+  }
+}
+
 export async function GET() {
   const currentUrl = await getSavedWebhookUrlAsync();
   return NextResponse.json({
@@ -236,6 +357,33 @@ export async function POST(request: NextRequest) {
         message: 'Webhook URL updated successfully.',
         webhookUrl: getSavedWebhookUrl(),
       });
+    }
+
+    // Check if assignment notification payload
+    if (body.type === 'assignment' || body.assigneeName) {
+      const { assigneeName, assigneeId, assignedBy, title, description, dueDate, priority, webhookUrl } = body;
+      const result = await sendAssignmentCardToGoogleChat({
+        webhookUrl: webhookUrl || (await getSavedWebhookUrlAsync()),
+        assigneeName: assigneeName || 'QA Member',
+        assigneeId: assigneeId || 'QA',
+        assignedBy: assignedBy || 'Chhayank Dave',
+        title: title || 'Task Assignment',
+        description: description || 'New task assigned',
+        dueDate: dueDate || new Date().toISOString().split('T')[0],
+        priority: priority || 'High',
+      });
+
+      if (result.success) {
+        return NextResponse.json({
+          success: true,
+          message: `Task assignment notification for ${assigneeName} sent to Google Chat!`,
+        });
+      } else {
+        return NextResponse.json(
+          { error: result.error || 'Failed to send assignment notification' },
+          { status: 500 }
+        );
+      }
     }
 
     const { employeeName, employeeId, date, tasks, webhookUrl } = body;

@@ -16,12 +16,27 @@ interface VersionInfo {
 
 const VERSIONS: VersionInfo[] = [
   {
-    version: 'v2.6.0',
-    date: 'August 7, 2026',
+    version: 'v2.7.0',
+    date: 'September 1, 2026',
     badge: 'Latest Release',
     badgeColor: 'bg-primary/10 text-primary border-primary/20 font-bold',
     icon: Sparkles,
     iconColor: 'bg-primary/10 text-primary border-primary/20',
+    title: 'Task Assignment Supabase Sync & Google Chat Assignment Notifications',
+    changes: [
+      'Connected Task Assignments directly to Supabase backend database table (task_assignments) with system_settings backup persistence, ensuring all assigned tasks dump to Supabase and reflect globally across all devices.',
+      'Added automated Google Chat Card Notification whenever a task is assigned, instantly notifying the assigned engineer with full title, assignee name, assigner name, due date, priority, and description.',
+      'Added uppercase [WORK_TYPE] [STATUS] formatting in Google Chat cards for enhanced visual clarity.',
+      'Ensured full team status card postings in Google Chat include all reporting members (both submitted and unsubmitted).',
+    ],
+  },
+  {
+    version: 'v2.6.0',
+    date: 'August 7, 2026',
+    badge: 'Stable',
+    badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-bold',
+    icon: Shield,
+    iconColor: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
     title: 'Google Chat Cron Webhook Resolution, Mobile Text Auto-Wrapping & UI Polish',
     changes: [
       'Refactored /api/cron/reminder-chat and /api/cron/auto-post-chat to use direct Supabase server client instance for Webhook URL resolution, ensuring 100% reliable 5 PM reminders and 7 PM task posts.',

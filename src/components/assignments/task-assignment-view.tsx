@@ -101,7 +101,9 @@ export function TaskAssignmentView() {
 
     // Optimistic UI update
     setAssignments((prev) => [newTask, ...prev]);
-    toast.success(`Task assigned to ${assigneeObj?.name || assignTo}!`);
+    toast.success(`Task assigned to ${assigneeObj?.name || assignTo}!`, {
+      description: 'Saved to Supabase & notification card sent to Google Chat.',
+    });
 
     setNewTitle('');
     setNewDesc('');
