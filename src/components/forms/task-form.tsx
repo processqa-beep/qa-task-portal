@@ -382,12 +382,17 @@ export function TaskForm({ existingTask, onSuccess }: TaskFormProps) {
             .eq('date', selectedDate);
 
           if (existingTasks && existingTasks.length > 0) {
-            todayTasksList = existingTasks.map((t: any) => ({
-              work_type: t.work_type,
-              task_performed: t.task_performed,
-              status: t.status,
-              remarks: t.remarks,
-            }));
+            const filteredTasks = existingTasks.filter(
+              (t: any) => !t.task_performed?.startsWith('[TASK_ASSIGNMENT]')
+            );
+            if (filteredTasks.length > 0) {
+              todayTasksList = filteredTasks.map((t: any) => ({
+                work_type: t.work_type,
+                task_performed: t.task_performed,
+                status: t.status,
+                remarks: t.remarks,
+              }));
+            }
           }
         } catch {
           // fallback to single item

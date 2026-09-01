@@ -44,11 +44,14 @@ const WORK_TYPE_BADGE_STYLES: Record<string, string> = {
 export function RecentTasks({ tasks, isLoading }: RecentTasksProps) {
   const [taskSearch, setTaskSearch] = useState('');
 
-  const filtered = tasks.filter(t =>
-    !taskSearch ||
-    t.task_performed.toLowerCase().includes(taskSearch.toLowerCase()) ||
-    t.work_type.toLowerCase().includes(taskSearch.toLowerCase()) ||
-    (t.employee?.name || t.employee_id).toLowerCase().includes(taskSearch.toLowerCase())
+  const cleanTasks = tasks.filter((t) => !t.task_performed?.startsWith('[TASK_ASSIGNMENT]'));
+
+  const filtered = cleanTasks.filter(
+    (t) =>
+      !taskSearch ||
+      t.task_performed.toLowerCase().includes(taskSearch.toLowerCase()) ||
+      t.work_type.toLowerCase().includes(taskSearch.toLowerCase()) ||
+      (t.employee?.name || t.employee_id).toLowerCase().includes(taskSearch.toLowerCase())
   );
 
   if (isLoading) {

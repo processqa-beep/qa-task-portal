@@ -31,10 +31,11 @@ export async function GET(request: NextRequest) {
       const { data: allTasks } = await taskQuery;
 
       if (allTasks && allTasks.length > 0) {
+        const cleanTasks = allTasks.filter((t) => !t.task_performed?.startsWith('[TASK_ASSIGNMENT]'));
         totalEmployees = empCount || 4;
         todaySubmitted = subCount || 0;
-        completedTasks = allTasks.filter((t) => t.status === 'Completed').length;
-        pendingTasks = allTasks.filter((t) => t.status === 'Pending').length;
+        completedTasks = cleanTasks.filter((t) => t.status === 'Completed').length;
+        pendingTasks = cleanTasks.filter((t) => t.status === 'Pending').length;
       }
     } catch (dbErr) {
       console.warn('Supabase stats query error, using defaults:', dbErr);

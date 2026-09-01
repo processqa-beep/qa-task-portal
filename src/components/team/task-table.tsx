@@ -77,6 +77,8 @@ export function TaskTable({ tasks, onTaskUpdated, showEmployee = true }: TaskTab
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
+      if (task.task_performed?.startsWith('[TASK_ASSIGNMENT]')) return false;
+
       const empName = (task.employee as unknown as { name: string })?.name || task.employee_id;
       const matchesSearch =
         !search ||

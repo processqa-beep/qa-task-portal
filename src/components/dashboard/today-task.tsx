@@ -77,7 +77,9 @@ export function TodayTask({ task, tasks = [], employees = [], isLoading }: Today
     );
   }
 
-  const todayTasks = tasks.filter(t => toStandardDateStr(t.date || t.created_at) === todayStr);
+  const todayTasks = tasks.filter(
+    (t) => toStandardDateStr(t.date || t.created_at) === todayStr && !t.task_performed?.startsWith('[TASK_ASSIGNMENT]')
+  );
   const reportingMembers = employees.filter(e => e.role !== 'leader' && e.id !== 'QA001');
 
   // Build flat list: for each reporting member, show all their today tasks (or one "not submitted" row)

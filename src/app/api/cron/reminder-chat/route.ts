@@ -47,7 +47,9 @@ export async function GET(request: NextRequest) {
       const { data } = await supabase.from('daily_tasks').select('*');
 
       if (data && Array.isArray(data)) {
-        todayTasks = data.filter((t) => toStandardDateStr(t.date || t.created_at) === todayStr);
+        todayTasks = data.filter(
+          (t) => toStandardDateStr(t.date || t.created_at) === todayStr && !t.task_performed?.startsWith('[TASK_ASSIGNMENT]')
+        );
       }
     } catch (dbErr) {
       console.warn('Reminder cron fetch tasks error:', dbErr);

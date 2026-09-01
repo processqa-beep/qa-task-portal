@@ -124,10 +124,14 @@ export async function sendCardToGoogleChat({
 
   const formattedDateStr = formatDateNice(date);
 
-  const hasSubmittedTasks = tasks && tasks.length > 0 && tasks.some(t => t.task_performed && t.task_performed !== 'Not submitted yet');
+  const cleanTasks = (tasks || []).filter(
+    (t) => t.task_performed && !t.task_performed.startsWith('[TASK_ASSIGNMENT]') && t.task_performed !== 'Not submitted yet'
+  );
+
+  const hasSubmittedTasks = cleanTasks.length > 0;
 
   const taskListWidgets = hasSubmittedTasks
-    ? tasks.map((t, idx) => {
+    ? cleanTasks.map((t, idx) => {
         const workTypeUpper = (t.work_type || 'TASK').toUpperCase();
         const workTypeTag = `<font color="#2563eb"><b>[${workTypeUpper}]</b></font>`;
         const remarksText = t.remarks ? `<br><i>Note: ${t.remarks}</i>` : '';
