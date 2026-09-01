@@ -70,8 +70,18 @@ export function TaskAssignmentView() {
   useEffect(() => {
     fetchAssignments(true);
 
-    // Poll every 4s so changes on any device automatically reflect across all devices
-    const interval = setInterval(() => fetchAssignments(false), 4000);
+    // Fetch and sync webhook URL to localStorage
+    fetch('/api/google-chat')
+      .then(res => res.json())
+      .then(data => {
+        if (data.webhookUrl && typeof window !== 'undefined') {
+          localStorage.setItem('qa-google-chat-webhook', data.webhookUrl);
+        }
+      })
+      .catch(() => {});
+
+    // Poll every 3s so changes on any device automatically reflect across all devices
+    const interval = setInterval(() => fetchAssignments(false), 3000);
     return () => clearInterval(interval);
   }, [fetchAssignments]);
 
@@ -85,6 +95,7 @@ export function TaskAssignmentView() {
     setIsSubmitting(true);
     const assigneeObj = REPORTING_ENGINEERS.find((e) => e.id === assignTo);
     const assignedByName = employee?.name ? `${employee.name} (${employee.id})` : 'Chhayank Dave (QA001)';
+    const savedWebhook = typeof window !== 'undefined' ? localStorage.getItem('qa-google-chat-webhook') || '' : '';
 
     const newTask: AssignedTask = {
       id: `asgn-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -112,7 +123,7 @@ export function TaskAssignmentView() {
 
     // Save directly to Supabase table
     try {
-      await fetch('/api/assignments', {
+      const res = await fetch('/api/assignments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -123,9 +134,12 @@ export function TaskAssignmentView() {
           assigned_by: newTask.assigned_by,
           due_date: newTask.due_date,
           priority: newTask.priority,
+          webhookUrl: savedWebhook,
         }),
       });
-      fetchAssignments(false);
+      if (res.ok) {
+        fetchAssignments(false);
+      }
     } catch {
       toast.error('Failed to sync assignment to Supabase');
     }
