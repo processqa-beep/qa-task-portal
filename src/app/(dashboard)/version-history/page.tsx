@@ -16,12 +16,27 @@ interface VersionInfo {
 
 const VERSIONS: VersionInfo[] = [
   {
-    version: 'v2.7.0',
+    version: 'v2.8.0',
     date: 'September 1, 2026',
     badge: 'Latest Release',
     badgeColor: 'bg-primary/10 text-primary border-primary/20 font-bold',
     icon: Sparkles,
     iconColor: 'bg-primary/10 text-primary border-primary/20',
+    title: 'Dual Supabase Assignment Persistence & Clean Google Chat Card Formatting',
+    changes: [
+      'Implemented dual-table Supabase database persistence for Task Assignments across dedicated task_assignments and daily_tasks tables, guaranteeing 0% data loss across page refreshes and multi-device sync.',
+      'Updated Google Chat card task line formatting to show clean uppercase work type categories (e.g. [CLOUD VISION]: Task Description) without redundant [COMPLETED] tags.',
+      'Configured automated Google Chat Assignment Cards dispatched immediately upon task creation with engineer name, assigner, due date, priority badge, and full description.',
+      'Enhanced 5:00 PM IST unsubmitted task reminders (Mon-Fri) and 7:00 PM IST all-members daily team summary posts to include both submitted and unsubmitted engineer cards.',
+    ],
+  },
+  {
+    version: 'v2.7.0',
+    date: 'September 1, 2026',
+    badge: 'Stable',
+    badgeColor: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20 font-bold',
+    icon: Shield,
+    iconColor: 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
     title: 'Task Assignment Supabase Sync & Google Chat Assignment Notifications',
     changes: [
       'Connected Task Assignments directly to Supabase backend database table (task_assignments) with system_settings backup persistence, ensuring all assigned tasks dump to Supabase and reflect globally across all devices.',
