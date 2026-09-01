@@ -128,18 +128,13 @@ export async function sendCardToGoogleChat({
 
   const taskListWidgets = hasSubmittedTasks
     ? tasks.map((t, idx) => {
-        const isCompleted = t.status === 'Completed';
-        const statusTag = isCompleted
-          ? '<font color="#16a34a"><b>[COMPLETED]</b></font>'
-          : '<font color="#d97706"><b>[PENDING]</b></font>';
-
         const workTypeUpper = (t.work_type || 'TASK').toUpperCase();
         const workTypeTag = `<font color="#2563eb"><b>[${workTypeUpper}]</b></font>`;
         const remarksText = t.remarks ? `<br><i>Note: ${t.remarks}</i>` : '';
 
         return {
           textParagraph: {
-            text: `<b>${idx + 1}.</b> ${workTypeTag} ${statusTag}: ${t.task_performed}${remarksText}`,
+            text: `<b>${idx + 1}.</b> ${workTypeTag}: ${t.task_performed}${remarksText}`,
           },
         };
       })
